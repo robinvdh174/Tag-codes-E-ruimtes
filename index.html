@@ -188,11 +188,38 @@ function statusLabel(s) {
 function doSearch(value) {
   var v = value.toLowerCase();
   var results = [];
+
   for (var i = 0; i < data.length; i++) {
-    var d = data[i];
-    if (d.code.toLowerCase().indexOf(v) !== -1 || d.location.toLowerCase().indexOf(v) !== -1 || (d.note && d.note.toLowerCase().indexOf(v) !== -1)) {
-      results.push(d);
+    if (
+      data[i].code.toLowerCase().indexOf(v) !== -1 ||
+      data[i].location.toLowerCase().indexOf(v) !== -1
+    ) {
+      results.push(data[i]);
     }
+  }
+
+  var container = document.getElementById("searchResults");
+  var count = document.getElementById("resultCount");
+
+  count.innerText = results.length;
+
+  if (results.length === 0) {
+    container.innerHTML = "<div class='empty'><b>Geen resultaten</b></div>";
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < results.length; i++) {
+    html += `
+      <div class="card">
+        <div class="code">${results[i].code}</div>
+        <div class="loc">${results[i].location}</div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
   }
   document.getElementById("resultCount").innerText = results.length;
   var container = document.getElementById("searchResults");
