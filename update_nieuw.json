@@ -1,0 +1,194 @@
+[
+  {
+    "id": "1800000000000",
+    "code": "K1134",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Balansventilator - naast e-ruimte kalander 13/14",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000001",
+    "code": "106A88V1.M1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Balansventilator droge rougnure uitwijkstall",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000002",
+    "code": "106A70P1.P1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Stofpomp cassepulper 5",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000003",
+    "code": "106A70V1.P1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Afzuigventilator cassepulper 5",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000004",
+    "code": "106A71A1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Tamboerafwikkelaar",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000005",
+    "code": "106A70P3.P1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Circulatiepomp cassepulper 5",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000006",
+    "code": "106A70V2.P1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Onderdruk ventilator cassepulper 5",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000007",
+    "code": "106A70R2.P1",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "Roerder 2 cassepulper 5",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000008",
+    "code": "6P002E2M14",
+    "location": "E-Ruimte 774-12",
+    "room": "E-Ruimte 774-12",
+    "note": "PLC002 cassesysteem",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000009",
+    "code": "106A41P5.M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp zuigkastenbak concentratiewater",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000010",
+    "code": "106B02V1.M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Vacuumventilator isoflex boxen",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000011",
+    "code": "106A54P1.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp toevoer 1e trap TL/OL",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000012",
+    "code": "106A107.01-M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Back ply header opening (OL)",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000013",
+    "code": "106A108.01-M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Filler ply header opening (ML)",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000014",
+    "code": "106A109.01-M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Top ply header opening (TL)",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000015",
+    "code": "106G01P8.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp boord en doorleidspuiten",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000016",
+    "code": "106G01P7.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp boord en doorleidspuiten",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000017",
+    "code": "106G01PB.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp pakkingswater spuiten",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000018",
+    "code": "106G01P6.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp bedrijfswater MD",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000019",
+    "code": "106A83/84",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Diskont. Viltwasinstallatie 1/2/3 perspartij",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000020",
+    "code": "106G01P9.P1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Pomp bedrijfswater HD",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000021",
+    "code": "M456-50",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Hijsluik afdichting natpartij 1E verdieping",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000022",
+    "code": "106A40P3.M1-M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Fanpomp 3 OL K1052",
+    "added": "22-03-2026"
+  },
+  {
+    "id": "1800000000023",
+    "code": "106A40P2.M1-M1",
+    "location": "E-Ruimte 775-03",
+    "room": "E-Ruimte 775-03",
+    "note": "Fanpomp 2 ML K1051",
+    "added": "22-03-2026"
+  }
+]
