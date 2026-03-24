@@ -189,31 +189,18 @@ var HOLD_MS = 2000;
 var syncTimer = null;
 var isSyncing = false;
 
-// localStorage fallback (zelfde logica als origineel)
+// Laad lokale cache als snelle eerste weergave
 try {
-  var saved = localStorage.getItem("ekast-local");
+  var saved = localStorage.getItem("ekast-data");
   if (saved) {
-    var extra = JSON.parse(saved);
-    var idxMap = {};
-    for (var i = 0; i < data.length; i++) idxMap[data[i].id] = i;
-    for (var i = 0; i < extra.length; i++) {
-      if (idxMap[extra[i].id] !== undefined) data[idxMap[extra[i].id]] = extra[i];
-      else data.push(extra[i]);
-    }
+    var parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) data = parsed;
   }
+  localStorage.removeItem("ekast-local"); // oude vuile key opruimen
 } catch(e) {}
 
 function saveLocal() {
-  try {
-    var orig = JSON.parse(document.getElementById("d").textContent);
-    var om = {};
-    for (var i = 0; i < orig.length; i++) om[orig[i].id] = orig[i];
-    var ch = [];
-    for (var i = 0; i < data.length; i++) {
-      if (!om[data[i].id] || JSON.stringify(om[data[i].id]) !== JSON.stringify(data[i])) ch.push(data[i]);
-    }
-    localStorage.setItem("ekast-local", JSON.stringify(ch));
-  } catch(e) {}
+  try { localStorage.setItem("ekast-data", JSON.stringify(data)); } catch(e) {}
 }
 
 // ============================================================
@@ -228,39 +215,34 @@ function setSyncStatus(state, label) {
 }
 
 // ============================================================
-// SYNC: LEZEN VAN GOOGLE SHEETS
+// SYNC: LEZEN — haalt alle data op uit Sheets
 // ============================================================
 async function syncFromSheets(silent) {
   if (!SCRIPT_URL || isSyncing) return;
   isSyncing = true;
   if (!silent) setSyncStatus("syncing", "Laden...");
-
   try {
-    var resp = await fetch(SCRIPT_URL + "?t=" + Date.now());
+    var resp = await fetch(SCRIPT_URL + "?action=get&t=" + Date.now());
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
-
     if (Array.isArray(json) && json.length > 0) {
-      // Sheets is de enige bron — dedupliceren en weergeven
       data = deduplicateById(json);
       saveLocal();
-      if (!silent) refreshUI();
+      refreshUI();
       var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
       setSyncStatus("ok", "Gesync " + now);
     } else {
-      // Sheet is leeg — toon huidige data maar push niet automatisch
       setSyncStatus("offline", "Sheet leeg");
     }
   } catch(e) {
-    setSyncStatus("error", "Sync fout");
-    console.warn("syncFromSheets fout:", e);
+    setSyncStatus("error", "Fout bij laden");
+    console.warn("syncFromSheets:", e);
   } finally {
     isSyncing = false;
   }
 }
 
-// Verwijder dubbele entries op basis van ID (houdt eerste instantie)
 function deduplicateById(arr) {
   var seen = {};
   return arr.filter(function(item) {
@@ -271,42 +253,24 @@ function deduplicateById(arr) {
 }
 
 // ============================================================
-// SYNC: SCHRIJVEN NAAR GOOGLE SHEETS
-// POST met no-cors (data arriveert altijd) + GET na 2s ter bevestiging
+// DELTA SYNC — individuele acties naar Sheets sturen via GET
+// Geen grote payload, geen CORS-problemen, altijd betrouwbaar
 // ============================================================
-async function syncToSheets(silent) {
-  if (!SCRIPT_URL) return;
-  if (!silent) setSyncStatus("syncing", "Opslaan...");
-
-  try {
-    // Stuur data via POST — no-cors zodat browser niet blokkeert
-    // Apps Script ontvangt dit correct via doPost()
-    await fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(data)
-    });
-
-    // Wacht even zodat Apps Script kan verwerken, haal dan bevestiging op
-    await new Promise(function(r) { setTimeout(r, 2000); });
-    await syncFromSheets(true);
-
-    var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
-
-  } catch(e) {
-    setSyncStatus("error", "Sync fout");
-    console.warn("syncToSheets fout:", e);
-  }
+async function sheetAction(params) {
+  if (!SCRIPT_URL) return false;
+  var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
+    return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
+  }).join("&") + "&t=" + Date.now();
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  var json = await resp.json();
+  if (json.error) throw new Error(json.error);
+  return json;
 }
 
 // Handmatige sync via klik op badge
 function manualSync() {
-  if (!SCRIPT_URL) {
-    showToast("Geen SCRIPT_URL ingesteld!", true);
-    return;
-  }
+  if (!SCRIPT_URL) { showToast("Geen SCRIPT_URL ingesteld!", true); return; }
   syncFromSheets(false);
 }
 
@@ -314,18 +278,19 @@ function manualSync() {
 // INITIALISATIE
 // ============================================================
 function init() {
-  // Laad embedded data als eerste fallback (geen localStorage merge meer)
-  // Sheets is de enige bron van waarheid zodra verbinding gemaakt is
+  // Toon meteen de lokaal gecachte data (snelle weergave)
+  // Sheets-sync vervangt dit zodra de verbinding klaar is
   updateTotalCount();
+  renderList();
 
   if (SCRIPT_URL) {
     setSyncStatus("syncing", "Verbinden...");
     syncFromSheets(false);
+    // Auto-sync elke 30 seconden
     syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
   } else {
     setSyncStatus("offline", "Geen sync");
     document.getElementById("setupBox").style.display = "block";
-    renderList();
   }
 }
 
@@ -429,14 +394,25 @@ function toggleEdit(id) {
 // ============================================================
 // STATUS (veiligstellen)
 // ============================================================
-function setStatus(id, newStatus) {
+async function setStatus(id, newStatus) {
+  var updatedItem = null;
   for (var i = 0; i < data.length; i++) {
     if (data[i].id == id) {
       data[i].status = (data[i].status === newStatus) ? "" : newStatus;
-      saveLocal();
-      syncToSheets(true);
-      refreshUI();
-      return;
+      updatedItem = data[i];
+      break;
+    }
+  }
+  saveLocal();
+  refreshUI();
+  if (updatedItem) {
+    try {
+      await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
+      var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+      setSyncStatus("ok", "Gesync " + now);
+    } catch(e) {
+      setSyncStatus("error", "Sync fout");
+      console.warn("setStatus sync:", e);
     }
   }
 }
@@ -480,7 +456,7 @@ function showFiltered() {
 // ============================================================
 // TOEVOEGEN
 // ============================================================
-function addEntry() {
+async function addEntry() {
   var code = document.getElementById("newCode").value.trim();
   var loc = document.getElementById("newLocation").value.trim();
   var note = document.getElementById("newNote").value.trim();
@@ -488,7 +464,7 @@ function addEntry() {
   if (!code || !loc) { showToast("Vul code en ruimte in!", true); return; }
 
   var today = new Date().toLocaleDateString("nl-NL");
-  data.push({
+  var newItem = {
     id: Date.now().toString(),
     code: code,
     location: loc,
@@ -496,18 +472,30 @@ function addEntry() {
     note: note,
     status: "",
     added: today,
-    addeddate: today
-  });
+    addeddate: today,
+    addedby: ""
+  };
 
+  data.push(newItem);
   saveLocal();
-  syncToSheets(false);
+  refreshUI();
 
   document.getElementById("newCode").value = "";
   document.getElementById("newLocation").value = "";
   document.getElementById("newPosition").value = "";
   document.getElementById("newNote").value = "";
-  updateTotalCount();
-  showToast("Kast opgeslagen en gesynchroniseerd!");
+
+  setSyncStatus("syncing", "Opslaan...");
+  try {
+    await sheetAction({ action: "add", data: JSON.stringify(newItem) });
+    var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
+    showToast("Kast toegevoegd!");
+  } catch(e) {
+    setSyncStatus("error", "Sync fout");
+    showToast("Lokaal opgeslagen, sync mislukt", true);
+    console.warn("addEntry sync:", e);
+  }
 }
 
 // ============================================================
@@ -529,35 +517,59 @@ function openEdit(id) {
 
 function closeModal() { document.getElementById("editModal").classList.remove("open"); }
 
-function saveEdit() {
+async function saveEdit() {
   var id = document.getElementById("editId").value;
+  var updatedItem = null;
   for (var i = 0; i < data.length; i++) {
     if (data[i].id == id) {
       data[i].code = document.getElementById("editCode").value.trim();
       data[i].location = document.getElementById("editLocation").value.trim();
       data[i].position = document.getElementById("editPosition").value.trim();
       data[i].note = document.getElementById("editNote").value.trim();
+      updatedItem = data[i];
       break;
     }
   }
   saveLocal();
-  syncToSheets(false);
   closeModal();
   refreshUI();
-  showToast("Opgeslagen!");
+
+  if (updatedItem) {
+    setSyncStatus("syncing", "Opslaan...");
+    try {
+      await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
+      var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+      setSyncStatus("ok", "Gesync " + now);
+      showToast("Opgeslagen!");
+    } catch(e) {
+      setSyncStatus("error", "Sync fout");
+      showToast("Lokaal opgeslagen, sync mislukt", true);
+      console.warn("saveEdit sync:", e);
+    }
+  }
 }
 
 // ============================================================
 // VERWIJDEREN
 // ============================================================
-function deleteEntry(id) {
+async function deleteEntry(id) {
   for (var i = 0; i < data.length; i++) {
     if (data[i].id == id) { data.splice(i, 1); break; }
   }
   saveLocal();
-  syncToSheets(false);
   refreshUI();
-  showToast("Verwijderd");
+
+  setSyncStatus("syncing", "Verwijderen...");
+  try {
+    await sheetAction({ action: "delete", id: id });
+    var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
+    showToast("Verwijderd");
+  } catch(e) {
+    setSyncStatus("error", "Sync fout");
+    showToast("Lokaal verwijderd, sync mislukt", true);
+    console.warn("deleteEntry sync:", e);
+  }
 }
 
 // ============================================================
