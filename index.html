@@ -258,14 +258,20 @@ function deduplicateById(arr) {
 // ============================================================
 async function sheetAction(params) {
   if (!SCRIPT_URL) return false;
-  var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
-    return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
-  }).join("&") + "&t=" + Date.now();
-  var resp = await fetch(url);
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
-  var json = await resp.json();
-  if (json.error) throw new Error(json.error);
-  return json;
+  // Blokkeer auto-sync terwijl we schrijven, anders overschrijft die onze nieuwe data
+  isSyncing = true;
+  try {
+    var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
+      return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
+    }).join("&") + "&t=" + Date.now();
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    var json = await resp.json();
+    if (json.error) throw new Error(json.error);
+    return json;
+  } finally {
+    isSyncing = false;
+  }
 }
 
 // Handmatige sync via klik op badge
@@ -487,13 +493,14 @@ async function addEntry() {
 
   setSyncStatus("syncing", "Opslaan...");
   try {
-    await sheetAction({ action: "add", data: JSON.stringify(newItem) });
-    var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    var result = await sheetAction({ action: "add", data: JSON.stringify(newItem) });
+    if (!result || !result.success) throw new Error("Geen bevestiging van server");
+    // Bevestigd! Haal verse data op uit Sheets
+    await syncFromSheets(true);
     showToast("Kast toegevoegd!");
   } catch(e) {
-    setSyncStatus("error", "Sync fout");
-    showToast("Lokaal opgeslagen, sync mislukt", true);
+    setSyncStatus("error", "Sync fout — lokaal opgeslagen");
+    showToast("Sync mislukt. Herlaad de pagina.", true);
     console.warn("addEntry sync:", e);
   }
 }
@@ -537,13 +544,13 @@ async function saveEdit() {
   if (updatedItem) {
     setSyncStatus("syncing", "Opslaan...");
     try {
-      await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
-      var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-      setSyncStatus("ok", "Gesync " + now);
+      var result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
+      if (!result || !result.success) throw new Error("Geen bevestiging van server");
+      await syncFromSheets(true);
       showToast("Opgeslagen!");
     } catch(e) {
-      setSyncStatus("error", "Sync fout");
-      showToast("Lokaal opgeslagen, sync mislukt", true);
+      setSyncStatus("error", "Sync fout — lokaal opgeslagen");
+      showToast("Sync mislukt. Herlaad de pagina.", true);
       console.warn("saveEdit sync:", e);
     }
   }
@@ -561,13 +568,13 @@ async function deleteEntry(id) {
 
   setSyncStatus("syncing", "Verwijderen...");
   try {
-    await sheetAction({ action: "delete", id: id });
-    var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    var result = await sheetAction({ action: "delete", id: id });
+    if (!result || !result.success) throw new Error("Geen bevestiging van server");
+    await syncFromSheets(true);
     showToast("Verwijderd");
   } catch(e) {
-    setSyncStatus("error", "Sync fout");
-    showToast("Lokaal verwijderd, sync mislukt", true);
+    setSyncStatus("error", "Sync fout — lokaal verwijderd");
+    showToast("Sync mislukt. Herlaad de pagina.", true);
     console.warn("deleteEntry sync:", e);
   }
 }
