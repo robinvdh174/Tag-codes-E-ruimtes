@@ -242,15 +242,15 @@ async function syncFromSheets(silent) {
     if (json.error) throw new Error(json.error);
 
     if (Array.isArray(json) && json.length > 0) {
-      // Sheets is de enige bron — geen merge, gewoon vervangen + dedupliceren op ID
+      // Sheets is de enige bron — dedupliceren en weergeven
       data = deduplicateById(json);
       saveLocal();
-      refreshUI();
+      if (!silent) refreshUI();
       var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
       setSyncStatus("ok", "Gesync " + now);
     } else {
-      // Sheet is leeg → eerste keer: push embedded data naar sheet
-      await syncToSheets(false);
+      // Sheet is leeg — toon huidige data maar push niet automatisch
+      setSyncStatus("offline", "Sheet leeg");
     }
   } catch(e) {
     setSyncStatus("error", "Sync fout");
@@ -272,23 +272,29 @@ function deduplicateById(arr) {
 
 // ============================================================
 // SYNC: SCHRIJVEN NAAR GOOGLE SHEETS
-// Via GET met ?action=post&data=... (100% CORS-proof workaround)
+// POST met no-cors (data arriveert altijd) + GET na 2s ter bevestiging
 // ============================================================
 async function syncToSheets(silent) {
   if (!SCRIPT_URL) return;
   if (!silent) setSyncStatus("syncing", "Opslaan...");
 
   try {
-    var encoded = encodeURIComponent(JSON.stringify(data));
-    var url = SCRIPT_URL + "?action=post&data=" + encoded + "&t=" + Date.now();
+    // Stuur data via POST — no-cors zodat browser niet blokkeert
+    // Apps Script ontvangt dit correct via doPost()
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(data)
+    });
 
-    var resp = await fetch(url);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    var json = await resp.json();
-    if (json.error) throw new Error(json.error);
+    // Wacht even zodat Apps Script kan verwerken, haal dan bevestiging op
+    await new Promise(function(r) { setTimeout(r, 2000); });
+    await syncFromSheets(true);
 
     var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+
   } catch(e) {
     setSyncStatus("error", "Sync fout");
     console.warn("syncToSheets fout:", e);
