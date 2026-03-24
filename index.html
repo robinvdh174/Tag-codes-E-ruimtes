@@ -499,9 +499,9 @@ async function addEntry() {
     await syncFromSheets(true);
     showToast("Kast toegevoegd!");
   } catch(e) {
-    setSyncStatus("error", "Sync fout — lokaal opgeslagen");
-    showToast("Sync mislukt. Herlaad de pagina.", true);
-    console.warn("addEntry sync:", e);
+    setSyncStatus("error", "Fout: " + e.message);
+    showToast("Fout: " + e.message, true);
+    console.error("addEntry sync:", e);
   }
 }
 
@@ -549,9 +549,9 @@ async function saveEdit() {
       await syncFromSheets(true);
       showToast("Opgeslagen!");
     } catch(e) {
-      setSyncStatus("error", "Sync fout — lokaal opgeslagen");
-      showToast("Sync mislukt. Herlaad de pagina.", true);
-      console.warn("saveEdit sync:", e);
+      setSyncStatus("error", "Fout: " + e.message);
+      showToast("Fout: " + e.message, true);
+      console.error("saveEdit sync:", e);
     }
   }
 }
@@ -573,9 +573,9 @@ async function deleteEntry(id) {
     await syncFromSheets(true);
     showToast("Verwijderd");
   } catch(e) {
-    setSyncStatus("error", "Sync fout — lokaal verwijderd");
-    showToast("Sync mislukt. Herlaad de pagina.", true);
-    console.warn("deleteEntry sync:", e);
+    setSyncStatus("error", "Fout: " + e.message);
+    showToast("Fout: " + e.message, true);
+    console.error("deleteEntry sync:", e);
   }
 }
 
