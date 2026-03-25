@@ -283,21 +283,36 @@ function manualSync() {
 // ============================================================
 // INITIALISATIE
 // ============================================================
-function init() {
-  // Toon meteen de lokaal gecachte data (snelle weergave)
-  // Sheets-sync vervangt dit zodra de verbinding klaar is
+async function init() {
   updateTotalCount();
   renderList();
 
-  if (SCRIPT_URL) {
-    setSyncStatus("syncing", "Verbinden...");
-    syncFromSheets(false);
-    // Auto-sync elke 30 seconden
-    syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
-  } else {
+  if (!SCRIPT_URL) {
     setSyncStatus("offline", "Geen sync");
     document.getElementById("setupBox").style.display = "block";
+    return;
   }
+
+  // Controleer eerst of de juiste versie actief is
+  setSyncStatus("syncing", "Verbinden...");
+  try {
+    var vresp = await fetch(SCRIPT_URL + "?action=version&t=" + Date.now());
+    var vdata = await vresp.json();
+    if (!vdata.version || vdata.version !== "v3") {
+      setSyncStatus("error", "Fout: verkeerde server (herlaad na nieuwe deploy)");
+      showToast("Server versie onjuist! Deploy Code.gs opnieuw.", true);
+      // Laad data wel nog op
+      syncFromSheets(false);
+      syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
+      return;
+    }
+  } catch(e) {
+    // Versiecheck mislukt - toch proberen
+    console.warn("Versiecheck mislukt:", e);
+  }
+
+  syncFromSheets(false);
+  syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
 }
 
 function updateTotalCount() {
