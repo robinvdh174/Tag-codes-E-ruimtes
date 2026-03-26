@@ -93,6 +93,11 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 // Na het deployen van Code.gs kopieer je de URL hier
 var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_V63x7Bv9T3XQW_vfL0K2wRlSfxm4476rJ0qZDrFOZ0nF9kg/exec";
 
+// 🔒 GEDEELDE PIN — verander dit naar een eigen PIN (enkel cijfers)
+// Iedereen die de app wil gebruiken heeft deze PIN nodig.
+// Pas je de PIN hier aan en upload je de HTML opnieuw, dan moeten alle toestellen de nieuwe PIN gebruiken.
+var DEVICE_PIN = "1234";
+
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 var SYNC_INTERVAL_MS = 30000;
 
@@ -715,9 +720,8 @@ async function logAction(action, code, location) {
 // PIN BEVEILIGING
 // ============================================================
 function checkPin() {
-  var storedPin = localStorage.getItem("ekast-pin");
   var device = localStorage.getItem("ekast-device");
-  if (!storedPin || !device) {
+  if (!device) {
     showPinSetup();
   } else {
     showPinEnter();
@@ -728,16 +732,14 @@ function showPinSetup() {
   var ov = document.getElementById("pinOverlay");
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
-    "<div class='pin-sub'>Eerste keer instellen.<br>Geef dit toestel een naam en stel een PIN in.</div>" +
+    "<div class='pin-sub'>Eerste keer op dit toestel.<br>Geef dit toestel een naam en voer de PIN in.</div>" +
     "<div style='width:100%;max-width:280px'>" +
     "<div class='form-group'><label>Naam van dit toestel</label>" +
     "<input type='text' id='setupDevice' placeholder='bv. GSM Dag' autocomplete='off'></div>" +
-    "<div class='form-group'><label>PIN (4-8 cijfers)</label>" +
+    "<div class='form-group'><label>PIN</label>" +
     "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='8' inputmode='numeric' autocomplete='off'></div>" +
-    "<div class='form-group'><label>PIN herhalen</label>" +
-    "<input type='password' class='pin-input' id='setupPin2' placeholder='••••' maxlength='8' inputmode='numeric' autocomplete='off'></div>" +
     "<div class='pin-error' id='pinErr'></div>" +
-    "<button class='btn-primary' onclick='savePin()'>Instellen</button>" +
+    "<button class='btn-primary' onclick='savePin()'>Bevestigen</button>" +
     "</div>";
   ov.classList.add("open");
 }
@@ -745,13 +747,10 @@ function showPinSetup() {
 function savePin() {
   var device = document.getElementById("setupDevice").value.trim();
   var pin = document.getElementById("setupPin").value;
-  var pin2 = document.getElementById("setupPin2").value;
   var err = document.getElementById("pinErr");
   if (!device) { err.textContent = "Geef een naam voor dit toestel."; return; }
-  if (pin.length < 4 || !/^\d+$/.test(pin)) { err.textContent = "PIN moet 4-8 cijfers zijn."; return; }
-  if (pin !== pin2) { err.textContent = "PINs komen niet overeen."; return; }
+  if (pin !== DEVICE_PIN) { err.textContent = "Onjuiste PIN."; document.getElementById("setupPin").value = ""; return; }
   localStorage.setItem("ekast-device", device);
-  localStorage.setItem("ekast-pin", pin);
   unlockApp();
 }
 
@@ -769,10 +768,9 @@ function showPinEnter() {
 
 function verifyPin() {
   var input = document.getElementById("pinInput");
-  var stored = localStorage.getItem("ekast-pin");
-  if (!input || !stored) return;
-  if (input.value.length >= stored.length) {
-    if (input.value === stored) {
+  if (!input) return;
+  if (input.value.length >= DEVICE_PIN.length) {
+    if (input.value === DEVICE_PIN) {
       unlockApp();
     } else {
       document.getElementById("pinErr").textContent = "Onjuiste PIN.";
