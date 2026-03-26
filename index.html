@@ -758,6 +758,7 @@ function savePin() {
   if (!device) { err.textContent = "Geef een naam voor dit toestel."; return; }
   if (pin !== DEVICE_PIN) { err.textContent = "Onjuiste PIN."; document.getElementById("setupPin").value = ""; return; }
   localStorage.setItem("ekast-device", device);
+  logAction("Registratie", "", "");
   unlockApp();
 }
 
@@ -778,6 +779,7 @@ function verifyPin() {
   if (!input) return;
   if (input.value.length >= DEVICE_PIN.length) {
     if (input.value === DEVICE_PIN) {
+      logAction("Aanmelding", "", "");
       unlockApp();
     } else {
       document.getElementById("pinErr").textContent = "Onjuiste PIN.";
