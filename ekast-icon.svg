@@ -19,5 +19,5 @@
   <circle cx="206" cy="200" r="116" fill="none" stroke="#020409" stroke-width="4" opacity="0.95"/>
   <polygon points="218,96 258,188 230,188 194,304 154,212 182,212" fill="url(#boltFill)" filter="url(#boltGlow)" clip-path="url(#lensClip)"/>
   <ellipse cx="158" cy="150" rx="24" ry="10" fill="white" opacity="0.055" transform="rotate(-40 158 150)"/>
-  <text x="400" y="472" font-family="Georgia,serif" font-size="40" font-weight="700" letter-spacing="5" text-anchor="end" fill="#2196f3" opacity="0.55">SAPPI</text>
+  <text x="310" y="440" font-family="Georgia,serif" font-size="48" font-weight="700" letter-spacing="5" text-anchor="end" fill="#2196f3" opacity="0.55">SAPPI</text>
 </svg>
