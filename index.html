@@ -721,10 +721,17 @@ async function logAction(action, code, location) {
 // ============================================================
 // PIN BEVEILIGING
 // ============================================================
+var SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minuten
+
 function checkPin() {
   var device = localStorage.getItem("ekast-device");
   if (!device) {
     showPinSetup();
+    return;
+  }
+  var lastUnlock = parseInt(localStorage.getItem("ekast-unlock") || "0", 10);
+  if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) {
+    init();
   } else {
     showPinEnter();
   }
@@ -786,6 +793,7 @@ function verifyPin() {
 }
 
 function unlockApp() {
+  localStorage.setItem("ekast-unlock", Date.now().toString());
   if (document.activeElement) document.activeElement.blur();
   document.getElementById("pinOverlay").classList.remove("open");
   init();
