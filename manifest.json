@@ -1,0 +1,17 @@
+{
+  "name": "E-Kast Zoeker",
+  "short_name": "E-Kast",
+  "description": "Elektriciteitskasten zoeken - Sappi",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0d0f12",
+  "theme_color": "#f0a500",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
