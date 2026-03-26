@@ -103,7 +103,7 @@ var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_
 // 🔒 GEDEELDE PIN — verander dit naar een eigen PIN (enkel cijfers)
 // Iedereen die de app wil gebruiken heeft deze PIN nodig.
 // Pas je de PIN hier aan en upload je de HTML opnieuw, dan moeten alle toestellen de nieuwe PIN gebruiken.
-var DEVICE_PIN = "1234";
+var DEVICE_PIN = "5100";
 
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 var SYNC_INTERVAL_MS = 30000;
@@ -552,6 +552,7 @@ async function addEntry() {
       saveLocal();
       refreshUI();
     }
+    logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
     showToast("Kast toegevoegd!");
   } catch(e) {
     setSyncStatus("error", "Fout: " + e.message);
@@ -708,11 +709,11 @@ function showRoomInfo(loc) {
 // ============================================================
 // AUDIT LOG
 // ============================================================
-async function logAction(action, code, location) {
+async function logAction(action, code, location, sheet) {
   if (!SCRIPT_URL) return;
   var device = localStorage.getItem("ekast-device") || "Onbekend";
   try {
-    await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device) });
+    await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
   } catch(e) {
     console.warn("Log fout:", e);
   }
