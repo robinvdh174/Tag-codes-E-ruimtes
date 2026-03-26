@@ -466,8 +466,6 @@ async function setStatus(id, newStatus) {
       await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
       var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
       setSyncStatus("ok", "Gesync " + now);
-      var logLabel = updatedItem.status === "ok" ? "Veiliggesteld" : "Vrijgegeven";
-      logAction(logLabel, updatedItem.code, updatedItem.location);
     } catch(e) {
       setSyncStatus("error", "Sync fout");
       console.warn("setStatus sync:", e);
@@ -554,7 +552,6 @@ async function addEntry() {
       saveLocal();
       refreshUI();
     }
-    logAction("Toegevoegd", newItem.code, newItem.location);
     showToast("Kast toegevoegd!");
   } catch(e) {
     setSyncStatus("error", "Fout: " + e.message);
@@ -606,7 +603,6 @@ async function saveEdit() {
       if (!result) throw new Error("Geen antwoord van server");
       if (result.error) throw new Error(result.error);
       await syncFromSheets(true);
-      logAction("Bewerkt", updatedItem.code, updatedItem.location);
       showToast("Opgeslagen!");
     } catch(e) {
       setSyncStatus("error", "Fout: " + e.message);
@@ -636,7 +632,6 @@ async function deleteEntry(id) {
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
     await syncFromSheets(true);
-    logAction("Verwijderd", delCode, delLoc);
     showToast("Verwijderd");
   } catch(e) {
     setSyncStatus("error", "Fout: " + e.message);
