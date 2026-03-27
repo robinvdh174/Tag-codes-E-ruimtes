@@ -79,6 +79,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .room-dropdown-item{padding:.75rem 1rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid var(--border);}
 .room-dropdown-item:last-child{border-bottom:none;}
 .room-dropdown-item:active{background:var(--accent);color:#000;}
+.info-popup-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:400;align-items:center;justify-content:center;padding:1.5rem;}
 .info-popup-overlay.open{display:flex;}
 .info-popup{background:var(--surface);border:1.5px solid #1a3a5c;border-top:3px solid #2196f3;border-radius:14px;padding:1.4rem 1.4rem 1.2rem;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
 .info-popup-title{font-size:1rem;font-weight:900;color:#4a9eff;margin-bottom:.6rem;}
@@ -356,6 +357,7 @@ function manualSync() {
 // INITIALISATIE
 // ============================================================
 async function init() {
+  closeInfoPopup();
   updateTotalCount();
   renderList();
 
