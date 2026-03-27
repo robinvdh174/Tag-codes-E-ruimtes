@@ -70,9 +70,10 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(100px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:30px;transition:transform .3s;z-index:999;white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .toast.error{background:var(--danger);color:#fff;}
-.input-with-btn{display:flex;gap:.4rem;align-items:center;}
-.input-with-btn input{flex:1;}
-.btn-room-pick{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;color:var(--accent);font-size:1rem;padding:.6rem .8rem;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.input-with-btn{display:flex;position:relative;}
+.input-with-btn input{flex:1;padding-right:2.4rem;}
+.btn-room-pick{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);font-size:.85rem;padding:.2rem .3rem;cursor:pointer;line-height:1;}
+.btn-room-pick:hover{color:var(--accent);}
 .room-dropdown{position:absolute;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;z-index:300;width:220px;max-height:260px;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;}
 .room-dropdown.open{display:block;}
 .room-dropdown-item{padding:.75rem 1rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid var(--border);}
