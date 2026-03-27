@@ -70,6 +70,12 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(100px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:30px;transition:transform .3s;z-index:999;white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .toast.error{background:var(--danger);color:#fff;}
+.info-popup-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;align-items:center;justify-content:center;padding:1.5rem;}
+.info-popup-overlay.open{display:flex;}
+.info-popup{background:var(--surface);border:1.5px solid #1a3a5c;border-top:3px solid #2196f3;border-radius:14px;padding:1.4rem 1.4rem 1.2rem;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
+.info-popup-title{font-size:1rem;font-weight:900;color:#4a9eff;margin-bottom:.6rem;}
+.info-popup-body{font-size:.9rem;color:var(--text);line-height:1.6;}
+.info-popup-close{margin-top:1rem;width:100%;padding:.6rem;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:.8rem;cursor:pointer;}
 .pin-overlay{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center;padding:2rem;}
 .pin-overlay.open{display:flex;}
 .pin-title{font-size:1.4rem;font-weight:900;color:var(--accent);margin-bottom:.4rem;text-align:center;}
@@ -212,6 +218,13 @@ var ROOM_INFO = {
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="info-popup-overlay" id="infoPopupOverlay" onclick="closeInfoPopup()">
+  <div class="info-popup" onclick="event.stopPropagation()">
+    <div class="info-popup-title" id="infoPopupTitle"></div>
+    <div class="info-popup-body" id="infoPopupBody"></div>
+    <button class="info-popup-close" onclick="closeInfoPopup()">Sluiten</button>
+  </div>
+</div>
 <div class="pin-overlay" id="pinOverlay"></div>
 
 <!-- ==================== EMBEDDED DATA (fallback) ==================== -->
@@ -692,22 +705,16 @@ function showToast(msg, err) {
 function showRoomInfo(loc) {
   var info = ROOM_INFO[loc];
   if (!info) return;
-  var t = document.getElementById("toast");
-  t.textContent = loc + ": " + info;
-  t.style.whiteSpace = "normal";
-  t.style.maxWidth = "92vw";
-  t.style.textAlign = "center";
-  t.className = "toast show";
-  t.style.background = "#1a3a5c";
-  t.style.color = "#fff";
+  document.getElementById("infoPopupTitle").textContent = loc;
+  document.getElementById("infoPopupBody").textContent = info;
+  document.getElementById("infoPopupOverlay").classList.add("open");
   clearTimeout(window._roomToast);
-  window._roomToast = setTimeout(function() {
-    t.classList.remove("show");
-    t.style.background = "";
-    t.style.color = "";
-    t.style.whiteSpace = "";
-    t.style.maxWidth = "";
-  }, 8000);
+  window._roomToast = setTimeout(closeInfoPopup, 8000);
+}
+
+function closeInfoPopup() {
+  document.getElementById("infoPopupOverlay").classList.remove("open");
+  clearTimeout(window._roomToast);
 }
 
 // ============================================================
