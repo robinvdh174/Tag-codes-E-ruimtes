@@ -70,7 +70,14 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(100px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:30px;transition:transform .3s;z-index:999;white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .toast.error{background:var(--danger);color:#fff;}
-.info-popup-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;align-items:center;justify-content:center;padding:1.5rem;}
+.input-with-btn{display:flex;gap:.4rem;align-items:center;}
+.input-with-btn input{flex:1;}
+.btn-room-pick{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;color:var(--accent);font-size:1rem;padding:.6rem .8rem;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.room-dropdown{position:absolute;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;z-index:300;width:220px;max-height:260px;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;}
+.room-dropdown.open{display:block;}
+.room-dropdown-item{padding:.75rem 1rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid var(--border);}
+.room-dropdown-item:last-child{border-bottom:none;}
+.room-dropdown-item:active{background:var(--accent);color:#000;}
 .info-popup-overlay.open{display:flex;}
 .info-popup{background:var(--surface);border:1.5px solid #1a3a5c;border-top:3px solid #2196f3;border-radius:14px;padding:1.4rem 1.4rem 1.2rem;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5);}
 .info-popup-title{font-size:1rem;font-weight:900;color:#4a9eff;margin-bottom:.6rem;}
@@ -185,7 +192,11 @@ var ROOM_INFO = {
 
     <div class="form-group"><label>Kastnummer / Tag-code</label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false"></div>
     <div class="form-group"><label>Ruimte / Locatie</label>
-      <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions">
+      <div class="input-with-btn" style="position:relative;">
+        <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions">
+        <button class="btn-room-pick" onclick="toggleRoomDropdown('newLocation','roomDrop1')" type="button">&#9660;</button>
+        <div class="room-dropdown" id="roomDrop1"></div>
+      </div>
       <datalist id="roomSuggestions">
         <option value="Stofkisten Gang"><option value="Omvormerruimte"><option value="3KV">
         <option value="OR12"><option value="Walsen Loods"><option value="Lift 19">
@@ -207,7 +218,13 @@ var ROOM_INFO = {
     <div class="modal-title">Kast bewerken</div>
     <input type="hidden" id="editId">
     <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off"></div>
-    <div class="form-group"><label>Locatie</label><input type="text" id="editLocation" autocomplete="off" list="roomSuggestions"></div>
+    <div class="form-group"><label>Locatie</label>
+      <div class="input-with-btn" style="position:relative;">
+        <input type="text" id="editLocation" autocomplete="off" list="roomSuggestions">
+        <button class="btn-room-pick" onclick="toggleRoomDropdown('editLocation','roomDrop2')" type="button">&#9660;</button>
+        <div class="room-dropdown" id="roomDrop2"></div>
+      </div>
+    </div>
     <div class="form-group"><label>Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan"></div>
     <div class="form-group"><label>Component</label><textarea id="editNote"></textarea></div>
     <div class="modal-btns">
@@ -697,6 +714,32 @@ function showToast(msg, err) {
   t.textContent = msg;
   t.className = "toast show" + (err ? " error" : "");
   setTimeout(function() { t.classList.remove("show"); }, 2500);
+}
+
+// ============================================================
+// RUIMTE DROPDOWN PICKER
+// ============================================================
+function toggleRoomDropdown(inputId, dropId) {
+  var drop = document.getElementById(dropId);
+  if (drop.classList.contains("open")) {
+    drop.classList.remove("open");
+    return;
+  }
+  var rooms = Object.keys(ROOM_INFO).filter(function(r) {
+    return !["W.L. nieuw","E-Ruimte 775-03","Omroller 12","Oprollerruimte 12"].includes(r);
+  });
+  drop.innerHTML = rooms.map(function(r) {
+    return "<div class='room-dropdown-item' onclick=\"document.getElementById('" + inputId + "').value='" + r.replace(/'/g,"\\'") + "';document.getElementById('" + dropId + "').classList.remove('open');\">" + r + "</div>";
+  }).join("");
+  drop.classList.add("open");
+  setTimeout(function() {
+    document.addEventListener("click", function handler(e) {
+      if (!drop.contains(e.target)) {
+        drop.classList.remove("open");
+        document.removeEventListener("click", handler);
+      }
+    });
+  }, 50);
 }
 
 // ============================================================
