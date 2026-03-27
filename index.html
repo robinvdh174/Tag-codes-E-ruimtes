@@ -837,6 +837,7 @@ function verifyPin() {
   if (!input) return;
   if (input.value.length >= DEVICE_PIN.length) {
     if (input.value === DEVICE_PIN) {
+      logAction("Aanmelding", "", "", "Logboek Aanmeldingen");
       unlockApp();
     } else {
       document.getElementById("pinErr").textContent = "Onjuiste PIN.";
