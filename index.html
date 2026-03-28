@@ -515,7 +515,7 @@ function makeCard(item) {
   h += "<div style=\"display:flex;justify-content:space-between;align-items:center;\">" +
         "<div class=\"loc\">" + esc(item.location) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
         "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
-        (item.status==="ok" ? "&#9889; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; Status") +
+        (item.status==="ok" ? "&#9888; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; Veiligstellen") +
         "</button></div>";
   if (item.position) h += "<div class=\"pos\">&#128205; " + esc(item.position) + "</div>";
   if (item.note) h += "<div class=\"note\">&#128172; " + esc(item.note) + "</div>";
@@ -560,7 +560,7 @@ function openStatusKeuze(id) {
 
   // Alle 3 mogelijke statussen — toon enkel de 2 die NIET de huidige zijn
   var alleOpties = [
-    { status: "ok",           label: "&#9889; Veiliggesteld", cls: "status-btn-veilig" },
+    { status: "ok",           label: "&#9888; Veiliggesteld", cls: "status-btn-veilig" },
     { status: "losgekoppeld", label: "&#9888; Losgekoppeld",  cls: "status-btn-los"   },
     { status: "",             label: "&#10003; Geen status",  cls: "status-btn-vrij"  }
   ];
