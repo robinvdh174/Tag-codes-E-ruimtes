@@ -562,7 +562,7 @@ function openStatusKeuze(id) {
   var alleOpties = [
     { status: "ok",           label: "&#9888; Veiliggesteld", cls: "status-btn-veilig" },
     { status: "losgekoppeld", label: "&#9888; Losgekoppeld",  cls: "status-btn-los"   },
-    { status: "",             label: "&#10003; Geen status",  cls: "status-btn-vrij"  }
+    { status: "",             label: "&#10003; In bedrijf",  cls: "status-btn-vrij"  }
   ];
 
   alleOpties.filter(function(opt) { return opt.status !== cur; }).forEach(function(opt) {
