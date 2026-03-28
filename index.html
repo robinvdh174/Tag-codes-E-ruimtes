@@ -51,6 +51,15 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .meta{font-size:.7rem;color:var(--muted);margin-top:.3rem;}
 .sbtn-veilig{display:inline-block;padding:.25rem .7rem;border-radius:20px;border:1px solid #2ecc71;background:#1a3a2a;color:#2ecc71;font-size:.72rem;cursor:pointer;font-family:sans-serif;font-weight:700;}
 .sbtn-veilig.secured{border-color:#f0a500;background:#3a2a00;color:#f0a500;}
+.sbtn-veilig.losgekoppeld{border-color:#e03c3c;background:#3a0a0a;color:#e03c3c;}
+.status-popup{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:450;display:none;align-items:center;justify-content:center;padding:1.5rem;}
+.status-popup.open{display:flex;}
+.status-popup-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1.2rem;width:100%;max-width:300px;}
+.status-popup-title{font-size:.8rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.8rem;text-align:center;}
+.status-btn-keuze{width:100%;padding:.85rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;margin-bottom:.5rem;display:flex;align-items:center;justify-content:center;gap:.5rem;}
+.status-btn-vrij{background:#1a3a2a;color:#2ecc71;border:1px solid #2ecc71;}
+.status-btn-veilig{background:#3a2a00;color:#f0a500;border:1px solid #f0a500;}
+.status-btn-los{background:#3a0a0a;color:#e03c3c;border:1px solid #e03c3c;}
 .btn-pencil{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.6;}
 .btn-pencil svg{width:18px;height:18px;display:block;}
 .edit-actions{display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);}
@@ -238,6 +247,14 @@ var ROOM_INFO = {
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="status-popup" id="statusPopup" onclick="closeStatusKeuze()">
+  <div class="status-popup-card" onclick="event.stopPropagation()">
+    <div class="status-popup-title">Kies status</div>
+    <button class="status-btn-keuze status-btn-veilig" onclick="kiesStatus('ok')">&#9889; Veiliggesteld</button>
+    <button class="status-btn-keuze status-btn-los" onclick="kiesStatus('losgekoppeld')">&#9888; Losgekoppeld</button>
+    <button class="status-btn-keuze status-btn-vrij" onclick="kiesStatus('')">&#10003; Terug vrij</button>
+  </div>
+</div>
 <div class="info-popup-overlay" id="infoPopupOverlay" onclick="closeInfoPopup()">
   <div class="info-popup" onclick="event.stopPropagation()">
     <div class="info-popup-title" id="infoPopupTitle"></div>
@@ -499,8 +516,8 @@ function makeCard(item) {
   h += "<div class=\"code\">" + esc(item.code) + "</div>";
   h += "<div style=\"display:flex;justify-content:space-between;align-items:center;\">" +
         "<div class=\"loc\">" + esc(item.location) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
-        "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":"") + "\" onclick=\"event.stopPropagation();setStatus(&#39;" + id + "&#39;,&#39;ok&#39;)\">" +
-        (item.status==="ok" ? "&#9888; Veiliggesteld" : "&#9889; Veiligstellen") +
+        "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
+        (item.status==="ok" ? "&#9889; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; Veiligstellen") +
         "</button></div>";
   if (item.position) h += "<div class=\"pos\">&#128205; " + esc(item.position) + "</div>";
   if (item.note) h += "<div class=\"note\">&#128172; " + esc(item.note) + "</div>";
@@ -531,6 +548,22 @@ function toggleEdit(id) {
 // ============================================================
 // STATUS (veiligstellen)
 // ============================================================
+var _statusKeuzeId = null;
+function openStatusKeuze(id) {
+  _statusKeuzeId = id;
+  document.getElementById("statusPopup").classList.add("open");
+}
+function closeStatusKeuze() {
+  document.getElementById("statusPopup").classList.remove("open");
+  _statusKeuzeId = null;
+}
+async function kiesStatus(newStatus) {
+  var id = _statusKeuzeId;
+  closeStatusKeuze();
+  if (!id) return;
+  await setStatus(id, newStatus);
+}
+
 async function setStatus(id, newStatus) {
   var idx = -1;
   for (var i = 0; i < data.length; i++) {
@@ -538,9 +571,7 @@ async function setStatus(id, newStatus) {
   }
   if (idx === -1) return;
 
-  var updatedItem = Object.assign({}, data[idx], {
-    status: (data[idx].status === newStatus) ? "" : newStatus
-  });
+  var updatedItem = Object.assign({}, data[idx], { status: newStatus });
 
   try {
     await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
