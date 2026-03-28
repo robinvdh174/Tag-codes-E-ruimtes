@@ -192,7 +192,7 @@ var ROOM_INFO = {
       <p style="margin-top:.5rem">Wijzigingen worden lokaal opgeslagen maar niet gesynchroniseerd. Stel de <code>SCRIPT_URL</code> in bovenaan de HTML om sync te activeren.</p>
     </div>
 
-    <div class="form-group"><label>Kastnummer / Tag-code</label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false"></div>
     <div class="form-group"><label>Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions">
@@ -554,7 +554,7 @@ async function addEntry() {
   var loc = document.getElementById("newLocation").value.trim();
   var note = document.getElementById("newNote").value.trim();
   var position = document.getElementById("newPosition").value.trim();
-  if (!code || !loc) { showToast("Vul code en ruimte in!", true); return; }
+  if (!loc) { showToast("Vul een ruimte in!", true); return; }
 
   var today = new Date().toLocaleDateString("nl-NL");
   var newItem = {
