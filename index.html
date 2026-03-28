@@ -119,6 +119,7 @@ var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_
 // Om de PIN te wijzigen: bereken de SHA-256 hash van je nieuwe PIN via https://emn178.github.io/online-tools/sha256.html
 // en vervang de waarde hieronder. Upload daarna de HTML opnieuw — alle toestellen moeten de nieuwe PIN gebruiken.
 var DEVICE_PIN_HASH = "1299c06d517825c0529d69fe9f8bbf7b308b9db68289db3c9f844570deb1d621";
+var DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 var SYNC_INTERVAL_MS = 30000;
@@ -600,7 +601,7 @@ async function addEntry() {
   var note = document.getElementById("newNote").value.trim();
   var position = document.getElementById("newPosition").value.trim();
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO[loc]) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  if (!ROOM_INFO.hasOwnProperty(loc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
 
   var today = new Date().toLocaleDateString("nl-NL");
   var newItem = {
@@ -666,7 +667,7 @@ async function saveEdit() {
 
   var newLoc = document.getElementById("editLocation").value.trim();
   if (!newLoc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO[newLoc]) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  if (!ROOM_INFO.hasOwnProperty(newLoc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
 
   var updatedItem = Object.assign({}, data[idx], {
     code:     document.getElementById("editCode").value.trim(),
@@ -883,7 +884,7 @@ function showPinEnter() {
 async function verifyPin() {
   var input = document.getElementById("pinInput");
   if (!input || input._checking) return;
-  if (input.value.length === 4) {
+  if (input.value.length === DEVICE_PIN_LENGTH) {
     input._checking = true;
     input.disabled = true;
     var h = await hashPin(input.value);
