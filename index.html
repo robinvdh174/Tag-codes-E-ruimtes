@@ -292,6 +292,16 @@ var HOLD_MS = 2000;
 var syncTimer = null;
 var isSyncing = false;
 
+// Veilige localStorage helpers (werkt ook in privémodus of bij vol geheugen)
+function safeGet(key, fallback) {
+  try { var v = localStorage.getItem(key); return v !== null ? v : fallback; }
+  catch(e) { return fallback; }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch(e) { showToast("Lokale opslag niet beschikbaar. Probeer buiten privémodus.", true); return false; }
+}
+
 // Laad lokale cache als snelle eerste weergave
 try {
   var saved = localStorage.getItem("ekast-data");
@@ -299,9 +309,10 @@ try {
     var parsed = JSON.parse(saved);
     if (Array.isArray(parsed) && parsed.length > 0) data = parsed;
   }
-  localStorage.removeItem("ekast-local"); // oude vuile key opruimen
+  try { localStorage.removeItem("ekast-local"); } catch(e) {} // oude vuile key opruimen
 } catch(e) {
   console.warn("Lokale cache kon niet worden geladen:", e);
+  showToast("Lokale opslag niet beschikbaar \u2014 gegevens worden niet bewaard.", true);
 }
 
 function saveLocal() {
@@ -880,7 +891,7 @@ function closeInfoPopup() {
 // ============================================================
 async function logAction(action, code, location, sheet) {
   if (!SCRIPT_URL) return;
-  var device = localStorage.getItem("ekast-device") || "Onbekend";
+  var device = safeGet("ekast-device", "Onbekend");
   try {
     await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
   } catch(e) {
@@ -899,12 +910,12 @@ async function hashPin(pin) {
 }
 
 function checkPin() {
-  var device = localStorage.getItem("ekast-device");
+  var device = safeGet("ekast-device", null);
   if (!device) {
     showPinSetup();
     return;
   }
-  var lastUnlock = parseInt(localStorage.getItem("ekast-unlock") || "0", 10);
+  var lastUnlock = parseInt(safeGet("ekast-unlock", "0"), 10);
   if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) {
     init();
   } else {
@@ -935,13 +946,13 @@ async function savePin() {
   if (!device) { err.textContent = "Geef een naam voor dit toestel."; return; }
   var h = await hashPin(pin);
   if (h !== DEVICE_PIN_HASH) { err.textContent = "Onjuiste PIN."; document.getElementById("setupPin").value = ""; return; }
-  localStorage.setItem("ekast-device", device);
+  safeSet("ekast-device", device);
   logAction("Registratie", "", "");
   unlockApp();
 }
 
 function showPinEnter() {
-  var device = localStorage.getItem("ekast-device") || "Dit toestel";
+  var device = safeGet("ekast-device", "Dit toestel");
   var ov = document.getElementById("pinOverlay");
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
@@ -977,7 +988,7 @@ async function verifyPin() {
 }
 
 function unlockApp() {
-  localStorage.setItem("ekast-unlock", Date.now().toString());
+  safeSet("ekast-unlock", Date.now().toString());
   if (document.activeElement) document.activeElement.blur();
   document.getElementById("pinOverlay").classList.remove("open");
   init();
