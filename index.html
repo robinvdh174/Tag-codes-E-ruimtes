@@ -132,8 +132,8 @@ var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_
 var DEVICE_PIN_HASH = "1299c06d517825c0529d69fe9f8bbf7b308b9db68289db3c9f844570deb1d621";
 var DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 
-// Auto-sync interval in milliseconden (standaard: 30 seconden)
-var SYNC_INTERVAL_MS = 30000;
+// Auto-sync interval in milliseconden (standaard: 60 seconden)
+var SYNC_INTERVAL_MS = 60000;
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -143,15 +143,15 @@ var ROOM_INFO = {
   "Omvormerruimte":    "gelijkvloers, rechter kant (AZ) van PM6",
   "3KV":               "1ste verdiep, tussen VSM 20 en Refinerhal",
   "DH":                "2de verdiep",
-  "E-Ruimte 774-12":   "1ste verdiep, langs rollen afwerking",
-  "W.L. Nieuw":        "gelijkvloers, Walsenloods links van PM6 klein trapje omhoog",
+  "E-Ruimte 774-12":   "1ste verdiep, tussen E-ruimte kalander en rollen afwerking",
+  "W.L. Nieuw":        "gelijkvloers, Walsenloods links (NAZ) van PM6 klein trapje omhoog",
   "OR12":              "1ste verdiep, langs ploegenhok en OR12",
   "Walsen Loods":      "gelijkvloers",
   "Lift 19":           "",
   "CSBO":              "CSB onder",
   "Lift 21":           "",
   "NICO-B":            "1ste verdieping, linkerkant van de NICO",
-  "NICO-O":            ""
+  "NICO-O":            "gelijkvloers, links van NICO"
 };
 </script>
 <!-- ================================================ -->
@@ -331,33 +331,45 @@ async function fetchWithTimeout(url, ms) {
 async function syncFromSheets(silent) {
   if (!SCRIPT_URL || isSyncing) return;
   isSyncing = true;
-  if (!silent) setSyncStatus("syncing", "Laden...");
-  try {
-    var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), 30000);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    var json = await resp.json();
-    if (json.error) throw new Error(json.error);
-    if (Array.isArray(json) && json.length > 0) {
-      data = deduplicateById(json);
-      saveLocal();
-      refreshUI();
-      var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-      setSyncStatus("ok", "Gesync " + now);
-    } else {
-      setSyncStatus("offline", "Sheet leeg");
+  if (!silent) setSyncStatus("syncing", "Verbinden...");
+  // Twee pogingen: eerste met langere timeout voor cold start, tweede als fallback
+  var timeouts = [25000, 20000];
+  var wachttijden = [0, 4000];
+  for (var poging = 0; poging < 2; poging++) {
+    if (poging > 0) {
+      setSyncStatus("syncing", "Nog eens proberen...");
+      await new Promise(function(r) { setTimeout(r, wachttijden[poging]); });
     }
-  } catch(e) {
-    if (e.name === "AbortError") {
-      setSyncStatus("offline", "Server reageert niet");
-    } else if (!navigator.onLine) {
-      setSyncStatus("offline", "Geen internet");
-    } else {
-      setSyncStatus("error", "Fout bij laden");
+    try {
+      var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), timeouts[poging]);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      var json = await resp.json();
+      if (json.error) throw new Error(json.error);
+      if (Array.isArray(json) && json.length > 0) {
+        data = deduplicateById(json);
+        saveLocal();
+        refreshUI();
+        var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+        setSyncStatus("ok", "Gesync " + now);
+      } else {
+        setSyncStatus("offline", "Sheet leeg");
+      }
+      isSyncing = false;
+      return;
+    } catch(e) {
+      console.warn("syncFromSheets poging " + (poging + 1) + ":", e);
+      if (poging < 1) continue; // stil herproberen
+      // Beide pogingen mislukt — toon passende melding
+      if (!navigator.onLine) {
+        setSyncStatus("offline", "Geen internet");
+      } else if (e.name === "AbortError") {
+        setSyncStatus("offline", "Traag netwerk — data uit cache");
+      } else {
+        setSyncStatus("error", "Laad fout: " + e.message.substring(0, 30));
+      }
     }
-    console.warn("syncFromSheets:", e);
-  } finally {
-    isSyncing = false;
   }
+  isSyncing = false;
 }
 
 function deduplicateById(arr) {
@@ -381,7 +393,7 @@ async function sheetAction(params) {
     var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
     }).join("&") + "&t=" + Date.now();
-    var resp = await fetchWithTimeout(url, 30000);
+    var resp = await fetchWithTimeout(url, 25000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
