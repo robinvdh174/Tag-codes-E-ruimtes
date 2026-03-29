@@ -891,7 +891,9 @@ function closeInfoPopup() {
 // ============================================================
 async function logAction(action, code, location, sheet) {
   if (!SCRIPT_URL) return;
-  var device = safeGet("ekast-device", "Onbekend");
+  var name = safeGet("ekast-device", "Onbekend");
+  var uid = safeGet("ekast-device-id", null);
+  var device = uid ? name + " (" + uid + ")" : name;
   try {
     await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
   } catch(e) {
@@ -947,6 +949,11 @@ async function savePin() {
   var h = await hashPin(pin);
   if (h !== DEVICE_PIN_HASH) { err.textContent = "Onjuiste PIN."; document.getElementById("setupPin").value = ""; return; }
   safeSet("ekast-device", device);
+  // Genereer een uniek toestel-ID als die nog niet bestaat
+  if (!safeGet("ekast-device-id", null)) {
+    var uid = Math.random().toString(36).slice(2, 6).toUpperCase();
+    safeSet("ekast-device-id", uid);
+  }
   logAction("Registratie", "", "");
   unlockApp();
 }
