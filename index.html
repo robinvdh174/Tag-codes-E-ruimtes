@@ -132,8 +132,8 @@ var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_
 var DEVICE_PIN_HASH = "1299c06d517825c0529d69fe9f8bbf7b308b9db68289db3c9f844570deb1d621";
 var DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 
-// Auto-sync interval in milliseconden (standaard: 30 seconden)
-var SYNC_INTERVAL_MS = 30000;
+// Auto-sync interval in milliseconden (standaard: 60 seconden)
+var SYNC_INTERVAL_MS = 60000;
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -331,12 +331,17 @@ async function fetchWithTimeout(url, ms) {
 async function syncFromSheets(silent) {
   if (!SCRIPT_URL || isSyncing) return;
   isSyncing = true;
-  if (!silent) setSyncStatus("syncing", "Laden...");
-  var pogingen = 0;
-  while (pogingen < 2) {
-    pogingen++;
+  if (!silent) setSyncStatus("syncing", "Verbinden...");
+  // Twee pogingen: eerste met langere timeout voor cold start, tweede als fallback
+  var timeouts = [25000, 20000];
+  var wachttijden = [0, 4000];
+  for (var poging = 0; poging < 2; poging++) {
+    if (poging > 0) {
+      setSyncStatus("syncing", "Nog eens proberen...");
+      await new Promise(function(r) { setTimeout(r, wachttijden[poging]); });
+    }
     try {
-      var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), 15000);
+      var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), timeouts[poging]);
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       var json = await resp.json();
       if (json.error) throw new Error(json.error);
@@ -352,20 +357,15 @@ async function syncFromSheets(silent) {
       isSyncing = false;
       return;
     } catch(e) {
-      console.warn("syncFromSheets poging " + pogingen + ":", e);
-      if (pogingen < 2) {
-        // Eerste poging mislukt — kort wachten en opnieuw proberen
-        setSyncStatus("syncing", "Herproberen...");
-        await new Promise(function(r) { setTimeout(r, 3000); });
+      console.warn("syncFromSheets poging " + (poging + 1) + ":", e);
+      if (poging < 1) continue; // stil herproberen
+      // Beide pogingen mislukt — toon passende melding
+      if (!navigator.onLine) {
+        setSyncStatus("offline", "Geen internet");
+      } else if (e.name === "AbortError") {
+        setSyncStatus("offline", "Traag netwerk — data uit cache");
       } else {
-        // Beide pogingen mislukt
-        if (!navigator.onLine) {
-          setSyncStatus("offline", "Geen internet");
-        } else if (e.name === "AbortError") {
-          setSyncStatus("offline", "Server reageert niet");
-        } else {
-          setSyncStatus("error", "Fout bij laden");
-        }
+        setSyncStatus("error", "Laad fout: " + e.message.substring(0, 30));
       }
     }
   }
@@ -393,7 +393,7 @@ async function sheetAction(params) {
     var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
     }).join("&") + "&t=" + Date.now();
-    var resp = await fetchWithTimeout(url, 15000);
+    var resp = await fetchWithTimeout(url, 25000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
