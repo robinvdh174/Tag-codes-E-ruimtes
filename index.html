@@ -333,7 +333,7 @@ async function syncFromSheets(silent) {
   isSyncing = true;
   if (!silent) setSyncStatus("syncing", "Laden...");
   try {
-    var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), 15000);
+    var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&t=" + Date.now(), 30000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
@@ -381,7 +381,7 @@ async function sheetAction(params) {
     var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
     }).join("&") + "&t=" + Date.now();
-    var resp = await fetchWithTimeout(url, 15000);
+    var resp = await fetchWithTimeout(url, 30000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
