@@ -893,7 +893,11 @@ async function logAction(action, code, location, sheet) {
   if (!SCRIPT_URL) return;
   var name = safeGet("ekast-device", "Onbekend");
   var uid = safeGet("ekast-device-id", null);
-  var device = uid ? name + " (" + uid + ")" : name;
+  if (!uid) {
+    uid = Math.random().toString(36).slice(2, 6).toUpperCase();
+    safeSet("ekast-device-id", uid);
+  }
+  var device = name + " (" + uid + ")";
   try {
     await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
   } catch(e) {
