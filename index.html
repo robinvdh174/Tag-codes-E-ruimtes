@@ -412,7 +412,17 @@ async function syncFromSheets(silent) {
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
     if (Array.isArray(json) && json.length > 0) {
-      data = deduplicateById(json);
+      // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent
+      var localMap = {};
+      data.forEach(function(d) { if (d.id) localMap[d.id] = d; });
+      var merged = json.map(function(serverItem) {
+        var local = localMap[serverItem.id];
+        if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
+          return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
+        }
+        return serverItem;
+      });
+      data = deduplicateById(merged);
       saveLocal();
       refreshUI();
       var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
@@ -640,12 +650,14 @@ function makeCard(item) {
   var h = "<div class=\"card\" id=\"c-" + id + "\" onclick=\"selectCard(this)\">";
   h += "<div class=\"card-top\"><div class=\"card-info\">";
   h += "<div class=\"code\">" + esc(item.code) + "</div>";
-  h += "<div style=\"display:flex;justify-content:space-between;align-items:center;\">" +
+  h += "<div style=\"display:flex;justify-content:space-between;align-items:flex-start;\">" +
         "<div class=\"loc\">" + esc(item.location) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
+        "<div style=\"display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;\">" +
         "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
         (item.status==="ok" ? "&#9888; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; In bedrijf") +
         "</button>" +
-        (item.status && item.statusBy ? "<div class=\"status-meta\">" + esc(item.statusBy) + (item.statusDate ? " &bull; " + formatDatum(item.statusDate) : "") + "</div>" : "") +
+        (item.status && item.statusBy ? "<div class=\"status-meta\" style=\"text-align:right;\">" + esc(item.statusBy) + (item.statusDate ? " &bull; " + formatDatum(item.statusDate) : "") + "</div>" : "") +
+        "</div>" +
         "</div>";
   if (item.position) h += "<div class=\"pos\">&#128205; " + esc(item.position) + "</div>";
   if (item.note) h += "<div class=\"note\">&#128172; " + esc(item.note) + "</div>";
