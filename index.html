@@ -113,6 +113,11 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .pin-error{color:var(--danger);font-size:.8rem;margin-top:.6rem;min-height:1.2em;text-align:center;}
 .btn-info-loc{background:none;border:none;color:#4a9eff;font-size:.85rem;cursor:pointer;padding:0 .15rem;vertical-align:middle;line-height:1;opacity:.8;}
 .btn-info-loc:hover{opacity:1;}
+.status-naam-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:460;display:none;align-items:center;justify-content:center;padding:1.5rem;}
+.status-naam-overlay.open{display:flex;}
+.status-naam-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1.4rem;width:100%;max-width:300px;}
+.status-naam-error{color:var(--danger);font-size:.8rem;min-height:1.2em;margin-top:.3rem;}
+.status-meta{font-size:.68rem;color:var(--muted);margin-top:.22rem;font-style:italic;}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:flex-end;}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--surface);border-top:2px solid var(--accent);border-radius:16px 16px 0 0;padding:1.5rem 1.2rem 2rem;width:100%;max-height:90vh;overflow-y:auto;}
@@ -290,6 +295,24 @@ var ROOM_INFO = {
   <div class="status-popup-card" onclick="event.stopPropagation()">
     <div class="status-popup-title" id="statusPopupTitle">Kies status</div>
     <div id="statusPopupBtns"></div>
+  </div>
+</div>
+<div class="status-naam-overlay" id="statusNaamOverlay">
+  <div class="status-naam-card" onclick="event.stopPropagation()">
+    <div class="status-popup-title" id="statusNaamTitel">Registreer statuswijziging</div>
+    <div class="form-group">
+      <label>Jouw naam</label>
+      <input type="text" id="statusNaamInput" placeholder="Naam" autocomplete="off">
+    </div>
+    <div class="form-group" style="margin-top:.7rem;">
+      <label>Datum</label>
+      <input type="date" id="statusDatumInput">
+    </div>
+    <div class="status-naam-error" id="statusNaamError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.9rem;">
+      <button class="btn-cancel" onclick="sluitStatusNaamModal()">Annuleren</button>
+      <button class="btn-primary" style="flex:1" onclick="bevestigStatusNaam()">Bevestigen</button>
+    </div>
   </div>
 </div>
 <div class="info-popup-overlay" id="infoPopupOverlay" onclick="closeInfoPopup()">
@@ -621,7 +644,9 @@ function makeCard(item) {
         "<div class=\"loc\">" + esc(item.location) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
         "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
         (item.status==="ok" ? "&#9888; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; In bedrijf") +
-        "</button></div>";
+        "</button>" +
+        (item.status && item.statusBy ? "<div class=\"status-meta\">" + esc(item.statusBy) + (item.statusDate ? " &bull; " + formatDatum(item.statusDate) : "") + "</div>" : "") +
+        "</div>";
   if (item.position) h += "<div class=\"pos\">&#128205; " + esc(item.position) + "</div>";
   if (item.note) h += "<div class=\"note\">&#128172; " + esc(item.note) + "</div>";
   h += "</div>";
@@ -652,6 +677,8 @@ function toggleEdit(id) {
 // STATUS (veiligstellen)
 // ============================================================
 var _statusKeuzeId = null;
+var _statusNaamId = null;
+var _statusNaamNieuw = null;
 function openStatusKeuze(id) {
   _statusKeuzeId = id;
   var item = data.find(function(d) { return d.id === id; });
@@ -688,18 +715,62 @@ function kiesStatus(newStatus) {
   var id = _statusKeuzeId;
   closeStatusKeuze();
   if (!id) return;
-  setStatus(id, newStatus);
+  _statusNaamId = id;
+  _statusNaamNieuw = newStatus;
+  var titelEl = document.getElementById("statusNaamTitel");
+  if (newStatus === "") {
+    titelEl.textContent = "Terugzetten naar In bedrijf";
+  } else if (newStatus === "ok") {
+    titelEl.textContent = "Veiligstellen registreren";
+  } else {
+    titelEl.textContent = "Loskoppelen registreren";
+  }
+  document.getElementById("statusNaamInput").value = "";
+  document.getElementById("statusDatumInput").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("statusNaamError").textContent = "";
+  document.getElementById("statusNaamOverlay").classList.add("open");
+  setTimeout(function() { var el = document.getElementById("statusNaamInput"); if (el) el.focus(); }, 150);
+}
+function sluitStatusNaamModal() {
+  document.getElementById("statusNaamOverlay").classList.remove("open");
+  _statusNaamId = null;
+  _statusNaamNieuw = null;
+}
+function bevestigStatusNaam() {
+  var naam = document.getElementById("statusNaamInput").value.trim();
+  var datum = document.getElementById("statusDatumInput").value;
+  var err = document.getElementById("statusNaamError");
+  if (!naam) { err.textContent = "Vul je naam in."; return; }
+  if (!datum) { err.textContent = "Vul een datum in."; return; }
+  var id = _statusNaamId;
+  var newStatus = _statusNaamNieuw;
+  sluitStatusNaamModal();
+  if (id != null) setStatus(id, newStatus, naam, datum);
+}
+function formatDatum(iso) {
+  if (!iso) return "";
+  var p = iso.split("-");
+  if (p.length === 3) return p[2] + "-" + p[1] + "-" + p[0];
+  return iso;
 }
 
-async function setStatus(id, newStatus) {
+async function setStatus(id, newStatus, naam, datum) {
   var idx = -1;
   for (var i = 0; i < data.length; i++) {
     if (data[i].id === id) { idx = i; break; }
   }
   if (idx === -1) return;
 
-  var previousStatus = data[idx].status;
-  var updatedItem = Object.assign({}, data[idx], { status: newStatus });
+  var previousItem = Object.assign({}, data[idx]);
+  var statusUpdate = { status: newStatus };
+  if (newStatus === "") {
+    statusUpdate.statusBy = "";
+    statusUpdate.statusDate = "";
+  } else {
+    statusUpdate.statusBy = naam || "";
+    statusUpdate.statusDate = datum || "";
+  }
+  var updatedItem = Object.assign({}, data[idx], statusUpdate);
 
   // UI meteen updaten — geen wachten op server
   data[idx] = updatedItem;
@@ -712,7 +783,7 @@ async function setStatus(id, newStatus) {
     setSyncStatus("ok", "Gesync " + now);
   } catch(e) {
     // Server faalde — terugdraaien
-    data[idx].status = previousStatus;
+    data[idx] = previousItem;
     saveLocal();
     refreshUI();
     setSyncStatus("error", "Sync fout");
