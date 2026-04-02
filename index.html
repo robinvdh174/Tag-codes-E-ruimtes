@@ -815,6 +815,7 @@ async function setStatus(id, newStatus, naam, datum) {
     await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    await syncFromSheets(true);
   } catch(e) {
     // Server faalde — terugdraaien
     data[idx] = previousItem;
@@ -899,7 +900,7 @@ async function addEntry() {
     data.push(newItem);
     saveLocal();
     refreshUI();
-    logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
+    await logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
     showToast("Kast toegevoegd!");
     await syncFromSheets(true);
   } catch(e) {
