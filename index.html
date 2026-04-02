@@ -825,8 +825,8 @@ function renderList() {
   for (var i = 0; i < rooms.length; i++) {
     var r = rooms[i];
     var cnt = r === "all" ? data.length : data.filter(function(d){ return d.location===r; }).length;
-    fh += "<span class=\"chip" + (activeRoom===r?" active":"") + "\" onclick=\"setRoom(this,'" + r + "')\">" +
-          (r==="all" ? "Alle (" + cnt + ")" : r + " (" + cnt + ")") + "</span>";
+    fh += "<span class=\"chip" + (activeRoom===r?" active":"") + "\" onclick=\"setRoom(this,'" + esc(r).replace(/'/g,"\\&#39;") + "')\">" +
+          (r==="all" ? "Alle (" + cnt + ")" : esc(r) + " (" + cnt + ")") + "</span>";
   }
   document.getElementById("roomFilter").innerHTML = fh;
   showFiltered();
@@ -868,19 +868,18 @@ async function addEntry() {
     note: note,
     status: "",
     added: today,
-    addedby: ""
+    addedby: safeGet("ekast-device", "")
   };
-
-  document.getElementById("newCode").value = "";
-  document.getElementById("newLocation").value = "";
-  document.getElementById("newPosition").value = "";
-  document.getElementById("newNote").value = "";
 
   setSyncStatus("syncing", "Opslaan...");
   try {
     var result = await sheetAction({ action: "add", data: JSON.stringify(newItem) });
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
+    document.getElementById("newCode").value = "";
+    document.getElementById("newLocation").value = "";
+    document.getElementById("newPosition").value = "";
+    document.getElementById("newNote").value = "";
     data.push(newItem);
     saveLocal();
     refreshUI();
@@ -1073,7 +1072,7 @@ async function logAction(action, code, location, sheet) {
   }
   var device = name + " (" + uid + ")";
   try {
-    await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
+    await sheetAction({ action: "log", logaction: action, code: code||"", location: location||"", device: device, sheet: sheet||"Logboek" });
   } catch(e) {
     console.warn("Log fout:", e);
   }
