@@ -407,42 +407,55 @@ async function syncFromSheets(silent) {
   if (!SCRIPT_URL || isSyncing) return;
   isSyncing = true;
   if (!silent) setSyncStatus("syncing", "Laden...");
-  try {
-    var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 15000);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    var json = await resp.json();
-    if (json.error) throw new Error(json.error);
-    if (Array.isArray(json) && json.length > 0) {
-      // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent
-      var localMap = {};
-      data.forEach(function(d) { if (d.id) localMap[d.id] = d; });
-      var merged = json.map(function(serverItem) {
-        var local = localMap[serverItem.id];
-        if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
-          return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
-        }
-        return serverItem;
-      });
-      data = deduplicateById(merged);
-      saveLocal();
-      refreshUI();
-      var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-      setSyncStatus("ok", "Gesync " + now);
-    } else {
-      setSyncStatus("offline", "Sheet leeg");
+  var attempt = 0;
+  while (attempt < 2) {
+    attempt++;
+    try {
+      var resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 25000);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      var json = await resp.json();
+      if (json.error) throw new Error(json.error);
+      if (Array.isArray(json) && json.length > 0) {
+        // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent
+        var localMap = {};
+        data.forEach(function(d) { if (d.id) localMap[d.id] = d; });
+        var merged = json.map(function(serverItem) {
+          var local = localMap[serverItem.id];
+          if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
+            return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
+          }
+          return serverItem;
+        });
+        data = deduplicateById(merged);
+        saveLocal();
+        refreshUI();
+        var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+        setSyncStatus("ok", "Gesync " + now);
+      } else {
+        setSyncStatus("offline", "Sheet leeg");
+      }
+      isSyncing = false;
+      return;
+    } catch(e) {
+      if (attempt < 2 && e.name === "AbortError") {
+        // Cold start Google Apps Script — wacht 6s en probeer nog één keer
+        setSyncStatus("syncing", "Herproberen...");
+        await new Promise(function(r) { setTimeout(r, 6000); });
+        continue;
+      }
+      if (e.name === "AbortError") {
+        setSyncStatus("offline", "Server reageert niet");
+      } else if (!navigator.onLine) {
+        setSyncStatus("offline", "Geen internet");
+      } else {
+        setSyncStatus("error", "Fout bij laden");
+      }
+      console.warn("syncFromSheets:", e);
+      isSyncing = false;
+      return;
     }
-  } catch(e) {
-    if (e.name === "AbortError") {
-      setSyncStatus("offline", "Server reageert niet");
-    } else if (!navigator.onLine) {
-      setSyncStatus("offline", "Geen internet");
-    } else {
-      setSyncStatus("error", "Fout bij laden");
-    }
-    console.warn("syncFromSheets:", e);
-  } finally {
-    isSyncing = false;
   }
+  isSyncing = false;
 }
 
 function deduplicateById(arr) {
@@ -466,7 +479,7 @@ async function sheetAction(params) {
     var url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
     }).join("&") + "&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now();
-    var resp = await fetchWithTimeout(url, 15000);
+    var resp = await fetchWithTimeout(url, 25000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     var json = await resp.json();
     if (json.error) throw new Error(json.error);
