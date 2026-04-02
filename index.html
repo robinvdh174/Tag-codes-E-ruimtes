@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>E-Kast Zoeker</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -48,6 +48,7 @@ textarea{resize:vertical;min-height:60px;font-family:sans-serif;}
 .form-group{margin-bottom:1rem;}
 label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem;}
 .btn-primary{width:100%;padding:1rem;background:var(--accent);color:#000;border:none;border-radius:8px;font-size:1rem;font-weight:900;cursor:pointer;margin-top:.3rem;}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
 .count{font-size:.75rem;color:var(--muted);margin-bottom:.8rem;font-family:monospace;}
 .count b{color:var(--accent);}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:.7rem;border-left:3px solid var(--accent);position:relative;cursor:pointer;}
@@ -264,7 +265,7 @@ var ROOM_INFO = {
       <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off">
     </div>
     <div class="form-group"><label>Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..."></textarea></div>
-    <button class="btn-primary" onclick="addEntry()">OPSLAAN</button>
+    <button class="btn-primary" id="btnAdd" onclick="addEntry()">OPSLAAN</button>
   </div>
 </main>
 
@@ -285,7 +286,7 @@ var ROOM_INFO = {
     <div class="form-group"><label>Component</label><textarea id="editNote"></textarea></div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
-      <button class="btn-primary" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
+      <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
     </div>
   </div>
 </div>
@@ -503,6 +504,14 @@ async function init() {
     window.addEventListener("online", function() {
       setSyncStatus("syncing", "Verbinding hersteld...");
       syncFromSheets(false);
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
+        else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
+        else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
+        else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
+      }
     });
   }
 
@@ -727,6 +736,11 @@ function kiesStatus(newStatus) {
   var id = _statusKeuzeId;
   closeStatusKeuze();
   if (!id) return;
+  if (newStatus === "") {
+    var item = data.find(function(d) { return d.id === id; });
+    var kastNaam = item ? (item.code || item.location || "deze kast") : "deze kast";
+    if (!confirm("LET OP: Je zet " + kastNaam + " terug naar 'In bedrijf'.\n\nDit betekent dat de kast weer onder spanning kan staan.\n\nWeet je dit zeker?")) return;
+  }
   _statusNaamId = id;
   _statusNaamNieuw = newStatus;
   var titelEl = document.getElementById("statusNaamTitel");
@@ -825,8 +839,8 @@ function renderList() {
   for (var i = 0; i < rooms.length; i++) {
     var r = rooms[i];
     var cnt = r === "all" ? data.length : data.filter(function(d){ return d.location===r; }).length;
-    fh += "<span class=\"chip" + (activeRoom===r?" active":"") + "\" onclick=\"setRoom(this,'" + r + "')\">" +
-          (r==="all" ? "Alle (" + cnt + ")" : r + " (" + cnt + ")") + "</span>";
+    fh += "<span class=\"chip" + (activeRoom===r?" active":"") + "\" onclick=\"setRoom(this,'" + esc(r).replace(/'/g,"\\&#39;") + "')\">" +
+          (r==="all" ? "Alle (" + cnt + ")" : esc(r) + " (" + cnt + ")") + "</span>";
   }
   document.getElementById("roomFilter").innerHTML = fh;
   showFiltered();
@@ -868,19 +882,20 @@ async function addEntry() {
     note: note,
     status: "",
     added: today,
-    addedby: ""
+    addedby: safeGet("ekast-device", "")
   };
 
-  document.getElementById("newCode").value = "";
-  document.getElementById("newLocation").value = "";
-  document.getElementById("newPosition").value = "";
-  document.getElementById("newNote").value = "";
-
+  var btnAdd = document.getElementById("btnAdd");
+  btnAdd.disabled = true; btnAdd.textContent = "OPSLAAN...";
   setSyncStatus("syncing", "Opslaan...");
   try {
     var result = await sheetAction({ action: "add", data: JSON.stringify(newItem) });
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
+    document.getElementById("newCode").value = "";
+    document.getElementById("newLocation").value = "";
+    document.getElementById("newPosition").value = "";
+    document.getElementById("newNote").value = "";
     data.push(newItem);
     saveLocal();
     refreshUI();
@@ -891,6 +906,8 @@ async function addEntry() {
     setSyncStatus("error", "Fout: " + e.message);
     showToast("Fout bij opslaan: " + e.message, true);
     console.error("addEntry sync:", e);
+  } finally {
+    btnAdd.disabled = false; btnAdd.textContent = "OPSLAAN";
   }
 }
 
@@ -932,12 +949,14 @@ async function saveEdit() {
     note:     document.getElementById("editNote").value.trim()
   });
 
-  closeModal();
+  var btnSave = document.getElementById("btnSaveEdit");
+  btnSave.disabled = true; btnSave.textContent = "Opslaan...";
   setSyncStatus("syncing", "Opslaan...");
   try {
     var result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
+    closeModal();
     data[idx] = updatedItem;
     saveLocal();
     refreshUI();
@@ -947,6 +966,8 @@ async function saveEdit() {
     setSyncStatus("error", "Fout: " + e.message);
     showToast("Fout: " + e.message, true);
     console.error("saveEdit sync:", e);
+  } finally {
+    btnSave.disabled = false; btnSave.textContent = "Opslaan";
   }
 }
 
@@ -1073,7 +1094,7 @@ async function logAction(action, code, location, sheet) {
   }
   var device = name + " (" + uid + ")";
   try {
-    await sheetAction({ action: "log", logaction: encodeURIComponent(action), code: encodeURIComponent(code||""), location: encodeURIComponent(location||""), device: encodeURIComponent(device), sheet: encodeURIComponent(sheet||"Logboek") });
+    await sheetAction({ action: "log", logaction: action, code: code||"", location: location||"", device: device, sheet: sheet||"Logboek" });
   } catch(e) {
     console.warn("Log fout:", e);
   }
