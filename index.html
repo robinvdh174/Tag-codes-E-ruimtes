@@ -130,6 +130,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .setup-box p{font-size:.8rem;color:var(--muted);line-height:1.5;}
 .setup-box ol{font-size:.8rem;color:var(--muted);margin:.5rem 0 0 1.2rem;line-height:1.8;}
 .setup-box code{font-family:monospace;color:var(--accent);background:#111;padding:.1rem .3rem;border-radius:3px;font-size:.75rem;}
+@media(min-width:768px){main{max-width:900px;margin:0 auto;}.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;}.card{margin-bottom:0;}}
 </style>
 </head>
 <body>
@@ -190,22 +191,22 @@ var ROOM_INFO = {
 </header>
 
 <div class="tabs-pill-wrap">
-  <div class="tabs-pill-container" id="tabsContainer">
+  <div class="tabs-pill-container" id="tabsContainer" role="tablist" aria-label="Navigatie">
     <div class="tabs-pill" id="tabsPill"></div>
-    <button class="tab-pill active" id="tbtn-search" onclick="switchTab('search')">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+    <button class="tab-pill active" id="tbtn-search" onclick="switchTab('search')" role="tab" aria-selected="true" aria-controls="tab-search" aria-label="Zoeken">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
       <span class="tab-label">ZOEKEN</span>
     </button>
-    <button class="tab-pill" id="tbtn-list" onclick="switchTab('list')">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
+    <button class="tab-pill" id="tbtn-list" onclick="switchTab('list')" role="tab" aria-selected="false" aria-controls="tab-list" aria-label="Lijst">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
       <span class="tab-label">LIJST</span>
     </button>
-    <button class="tab-pill" id="tbtn-status" onclick="switchTab('status')">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span class="status-badge hidden" id="statusBadge">0</span></span>
+    <button class="tab-pill" id="tbtn-status" onclick="switchTab('status')" role="tab" aria-selected="false" aria-controls="tab-status" aria-label="Status">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span class="status-badge hidden" id="statusBadge" aria-live="polite">0</span></span>
       <span class="tab-label">STATUS</span>
     </button>
-    <button class="tab-pill" id="tbtn-add" onclick="switchTab('add')">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+    <button class="tab-pill" id="tbtn-add" onclick="switchTab('add')" role="tab" aria-selected="false" aria-controls="tab-add" aria-label="Toevoegen">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       <span class="tab-label">+ TOEVOEGEN</span>
     </button>
   </div>
@@ -213,10 +214,10 @@ var ROOM_INFO = {
 
 <main>
   <!-- ZOEKEN -->
-  <div id="tab-search" class="panel active">
-    <input type="text" id="searchInput" placeholder="Typ kastnummer, ruimte of notitie..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem">
+  <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
+    <input type="text" id="searchInput" placeholder="Typ kastnummer, ruimte of notitie..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem" aria-label="Zoek kasten">
     <div class="count">Gevonden: <b id="resultCount">0</b></div>
-    <div id="searchResults">
+    <div id="searchResults" class="card-grid">
       <div class="empty">
         <b>Typ een kastnummer</b>
         <span id="totalCount">...</span> kasten beschikbaar
@@ -226,19 +227,19 @@ var ROOM_INFO = {
   </div>
 
   <!-- LIJST -->
-  <div id="tab-list" class="panel">
+  <div id="tab-list" class="panel" role="tabpanel" aria-labelledby="tbtn-list">
     <div class="filter" id="roomFilter"></div>
-    <div id="listResults"></div>
+    <div id="listResults" class="card-grid"></div>
   </div>
 
   <!-- STATUS -->
-  <div id="tab-status" class="panel">
+  <div id="tab-status" class="panel" role="tabpanel" aria-labelledby="tbtn-status">
     <div class="count">Actief: <b id="statusCount">0</b></div>
-    <div id="statusResults"></div>
+    <div id="statusResults" class="card-grid"></div>
   </div>
 
   <!-- TOEVOEGEN -->
-  <div id="tab-add" class="panel">
+  <div id="tab-add" class="panel" role="tabpanel" aria-labelledby="tbtn-add">
     <div class="section-title">Nieuwe kast toevoegen</div>
 
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
@@ -247,10 +248,10 @@ var ROOM_INFO = {
       <p style="margin-top:.5rem">Wijzigingen worden lokaal opgeslagen maar niet gesynchroniseerd. Stel de <code>SCRIPT_URL</code> in bovenaan de HTML om sync te activeren.</p>
     </div>
 
-    <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="50"></div>
     <div class="form-group"><label>Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
-        <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions">
+        <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions" maxlength="50">
         <button class="btn-room-pick" onclick="toggleRoomDropdown('newLocation','roomDrop1')" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
@@ -262,9 +263,9 @@ var ROOM_INFO = {
       </datalist>
     </div>
     <div class="form-group"><label>Positie in ruimte (optioneel)</label>
-      <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off">
+      <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off" maxlength="100">
     </div>
-    <div class="form-group"><label>Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..."></textarea></div>
+    <div class="form-group"><label>Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..." maxlength="500"></textarea></div>
     <button class="btn-primary" id="btnAdd" onclick="addEntry()">OPSLAAN</button>
   </div>
 </main>
@@ -274,16 +275,16 @@ var ROOM_INFO = {
   <div class="modal">
     <div class="modal-title">Kast bewerken</div>
     <input type="hidden" id="editId">
-    <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off"></div>
+    <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off" maxlength="50"></div>
     <div class="form-group"><label>Locatie</label>
       <div class="input-with-btn" style="position:relative;">
-        <input type="text" id="editLocation" autocomplete="off" list="roomSuggestions">
+        <input type="text" id="editLocation" autocomplete="off" list="roomSuggestions" maxlength="50">
         <button class="btn-room-pick" onclick="toggleRoomDropdown('editLocation','roomDrop2')" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop2"></div>
       </div>
     </div>
-    <div class="form-group"><label>Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan"></div>
-    <div class="form-group"><label>Component</label><textarea id="editNote"></textarea></div>
+    <div class="form-group"><label>Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan" maxlength="100"></div>
+    <div class="form-group"><label>Component</label><textarea id="editNote" maxlength="500"></textarea></div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
@@ -431,14 +432,20 @@ async function syncFromSheets(silent) {
         refreshUI();
         var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
         setSyncStatus("ok", "Gesync " + now);
+      } else if (Array.isArray(json) && json.length === 0) {
+        data = [];
+        saveLocal();
+        refreshUI();
+        var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+        setSyncStatus("ok", "Gesync " + now + " (leeg)");
       } else {
-        setSyncStatus("offline", "Sheet leeg");
+        setSyncStatus("offline", "Ongeldig antwoord");
       }
       isSyncing = false;
       return;
     } catch(e) {
-      if (attempt < 2 && e.name === "AbortError") {
-        // Cold start Google Apps Script — wacht 6s en probeer nog één keer
+      if (attempt < 2 && (e.name === "AbortError" || e.message.indexOf("HTTP 5") !== -1 || e.name === "TypeError")) {
+        // Cold start, tijdelijke serverfout of netwerkfout — wacht 6s en probeer nog één keer
         setSyncStatus("syncing", "Herproberen...");
         await new Promise(function(r) { setTimeout(r, 6000); });
         continue;
@@ -549,7 +556,7 @@ function updateTotalCount() {
 
 function refreshUI() {
   updateTotalCount();
-  doSearch(document.getElementById("searchInput").value);
+  if (document.getElementById("tab-search").classList.contains("active")) doSearch(document.getElementById("searchInput").value);
   if (document.getElementById("tab-list").classList.contains("active")) renderList();
   if (document.getElementById("tab-status").classList.contains("active")) renderStatus();
   updateStatusBadge();
@@ -563,9 +570,11 @@ function switchTab(name) {
     document.getElementById("tab-" + t).classList.remove("active");
     var btn = document.getElementById("tbtn-" + t);
     btn.classList.remove("active", "active-blue");
+    btn.setAttribute("aria-selected", "false");
   });
   document.getElementById("tab-" + name).classList.add("active");
   var activeBtn = document.getElementById("tbtn-" + name);
+  activeBtn.setAttribute("aria-selected", "true");
   if (name === "status") {
     activeBtn.classList.add("active-blue");
   } else {
@@ -591,6 +600,7 @@ function movePill(tabName) {
 }
 
 function renderStatus() {
+  _currentSearchTerm = "";
   var active = data.filter(function(d) { return d.status && d.status !== ""; });
   active.sort(function(a, b) { return (a.location||"").localeCompare(b.location||""); });
   document.getElementById("statusCount").innerText = active.length;
@@ -630,10 +640,12 @@ function _doSearchNow(value) {
   var countEl = document.getElementById("resultCount");
   var container = document.getElementById("searchResults");
   if (!v) {
+    _currentSearchTerm = "";
     countEl.innerText = "0";
     container.innerHTML = "<div class=\"empty\"><b>Typ een kastnummer</b><span id=\"totalCount\">" + data.length + "</span> kasten beschikbaar<br><span style=\"color:#4a9eff;font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;\">Sappi</span></div>";
     return;
   }
+  _currentSearchTerm = value.trim();
   var results = [];
   for (var i = 0; i < data.length; i++) {
     var d = data[i];
@@ -667,13 +679,24 @@ function esc(s) {
     .replace(/'/g, "&#39;");
 }
 
+function highlight(text, term) {
+  if (!term) return esc(text);
+  var escaped = esc(text);
+  var termEsc = esc(term);
+  var regex = new RegExp("(" + termEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+  return escaped.replace(regex, "<mark style=\"background:#f0a500;color:#000;border-radius:2px;padding:0 1px;\">$1</mark>");
+}
+
+var _currentSearchTerm = "";
+
 function makeCard(item) {
   var id = esc(item.id);
+  var term = _currentSearchTerm;
   var h = "<div class=\"card\" id=\"c-" + id + "\" onclick=\"selectCard(this)\">";
   h += "<div class=\"card-top\"><div class=\"card-info\">";
-  h += "<div class=\"code\">" + esc(item.code) + "</div>";
+  h += "<div class=\"code\">" + highlight(item.code, term) + "</div>";
   h += "<div style=\"display:flex;justify-content:space-between;align-items:flex-start;\">" +
-        "<div class=\"loc\">" + esc(item.location) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
+        "<div class=\"loc\">" + highlight(item.location, term) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
         "<div style=\"display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;\">" +
         "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
         (item.status==="ok" ? "&#9888; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; In bedrijf") +
@@ -681,8 +704,8 @@ function makeCard(item) {
         (item.status && item.statusBy ? "<div class=\"status-meta\" style=\"text-align:right;\">" + esc(item.statusBy) + (item.statusDate ? " &bull; " + formatDatum(item.statusDate) : "") + "</div>" : "") +
         "</div>" +
         "</div>";
-  if (item.position) h += "<div class=\"pos\">&#128205; " + esc(item.position) + "</div>";
-  if (item.note) h += "<div class=\"note\">&#128172; " + esc(item.note) + "</div>";
+  if (item.position) h += "<div class=\"pos\">&#128205; " + highlight(item.position, term) + "</div>";
+  if (item.note) h += "<div class=\"note\">&#128172; " + highlight(item.note, term) + "</div>";
   h += "</div>";
   h += "<button class=\"btn-pencil\" onclick=\"event.stopPropagation();toggleEdit(&#39;" + id + "&#39;)\">";
   h += "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"/><path d=\"M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z\"/></svg>";
@@ -868,6 +891,7 @@ function setRoom(el, r) {
 }
 
 function showFiltered() {
+  _currentSearchTerm = "";
   var filtered = data.filter(function(d) { return activeRoom === "all" || d.location === activeRoom; });
   filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
   var html = "";
@@ -1081,7 +1105,7 @@ function toggleRoomDropdown(inputId, dropId) {
 // RUIMTE INFO
 // ============================================================
 function showRoomInfo(loc) {
-  var info = ROOM_INFO[loc];
+  var info = (ROOM_INFO[loc] || "").trim();
   if (!info) return;
   document.getElementById("infoPopupTitle").textContent = loc;
   document.getElementById("infoPopupBody").textContent = info;
@@ -1183,24 +1207,62 @@ function showPinEnter() {
   setTimeout(function() { var el = document.getElementById("pinInput"); if (el) el.focus(); }, 150);
 }
 
+var _pinAttempts = 0;
+var _pinLockUntil = parseInt(safeGet("ekast-pin-lock", "0"), 10);
+var PIN_MAX_ATTEMPTS = 5;
+var PIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minuten
+
 async function verifyPin() {
   var input = document.getElementById("pinInput");
+  var errEl = document.getElementById("pinErr");
   if (!input || input._checking) return;
+
+  // Check of account nog geblokkeerd is
+  if (_pinLockUntil > Date.now()) {
+    var secLeft = Math.ceil((_pinLockUntil - Date.now()) / 1000);
+    errEl.textContent = "Geblokkeerd. Wacht " + secLeft + " seconden.";
+    input.value = "";
+    return;
+  }
+
   if (input.value.length === DEVICE_PIN_LENGTH) {
     input._checking = true;
     input.disabled = true;
     var h = await hashPin(input.value);
     if (h === DEVICE_PIN_HASH) {
+      _pinAttempts = 0;
       logAction("Aanmelding", "", "", "Logboek Aanmeldingen");
       unlockApp();
     } else {
-      var errEl = document.getElementById("pinErr");
-      errEl.textContent = "Onjuiste PIN. Probeer opnieuw.";
+      _pinAttempts++;
+      if (_pinAttempts >= PIN_MAX_ATTEMPTS) {
+        _pinLockUntil = Date.now() + PIN_LOCKOUT_MS;
+        safeSet("ekast-pin-lock", _pinLockUntil.toString());
+        errEl.textContent = "Te veel pogingen. 5 minuten geblokkeerd.";
+        input.value = "";
+        input.disabled = true;
+        input._checking = false;
+        // Start countdown
+        var lockInterval = setInterval(function() {
+          var left = Math.ceil((_pinLockUntil - Date.now()) / 1000);
+          if (left <= 0) {
+            clearInterval(lockInterval);
+            _pinAttempts = 0;
+            errEl.textContent = "";
+            input.disabled = false;
+            input._checking = false;
+            input.focus();
+          } else {
+            errEl.textContent = "Geblokkeerd. Wacht " + left + " seconden.";
+          }
+        }, 1000);
+        return;
+      }
+      errEl.textContent = "Onjuiste PIN. Nog " + (PIN_MAX_ATTEMPTS - _pinAttempts) + " pogingen.";
       setTimeout(function() {
         input.value = "";
         input.disabled = false;
         input._checking = false;
-        errEl.textContent = "";
         input.focus();
       }, 1200);
     }
@@ -1212,6 +1274,12 @@ function unlockApp() {
   if (document.activeElement) document.activeElement.blur();
   document.getElementById("pinOverlay").classList.remove("open");
   init();
+  // Verleng sessie bij activiteit
+  ["click", "touchstart", "keydown"].forEach(function(evt) {
+    document.addEventListener(evt, function() {
+      safeSet("ekast-unlock", Date.now().toString());
+    }, {passive: true});
+  });
 }
 
 // ============================================================
