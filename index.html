@@ -125,6 +125,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .modal-title{font-size:1rem;font-weight:900;margin-bottom:1.2rem;color:var(--accent);}
 .modal-btns{display:flex;gap:.7rem;margin-top:1rem;}
 .btn-cancel{flex:1;padding:.85rem;background:#1c2030;color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer;}
+.btn-room-add{padding:.35rem .75rem;background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap;}
 /* Setup modal */
 .setup-box{background:#1a2035;border:1px solid var(--accent);border-radius:10px;padding:1rem;margin-bottom:1rem;}
 .setup-box p{font-size:.8rem;color:var(--muted);line-height:1.5;}
@@ -173,6 +174,16 @@ var ROOM_INFO = {
   "NICO-B":            "1ste verdieping, linkerkant van de NICO",
   "NICO-O":            "Gelijkvloers, links van Nico (AZ) trapje omhoog"
 };
+
+// Laad eerder toegevoegde custom ruimtes uit localStorage en voeg toe aan ROOM_INFO
+(function loadCustomRooms() {
+  try {
+    var stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    Object.keys(stored).forEach(function(name) {
+      if (!ROOM_INFO.hasOwnProperty(name)) ROOM_INFO[name] = stored[name];
+    });
+  } catch(e) {}
+})();
 </script>
 <!-- ================================================ -->
 
@@ -240,7 +251,10 @@ var ROOM_INFO = {
 
   <!-- TOEVOEGEN -->
   <div id="tab-add" class="panel" role="tabpanel" aria-labelledby="tbtn-add">
-    <div class="section-title">Nieuwe kast toevoegen</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;">
+      <div class="section-title" style="margin-bottom:0">Nieuwe kast toevoegen</div>
+      <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
+    </div>
 
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
     <div class="setup-box" id="setupBox" style="display:none">
@@ -288,6 +302,25 @@ var ROOM_INFO = {
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ruimte toevoegen modal -->
+<div class="modal-overlay" id="addRoomModal" onclick="if(event.target===this)closeAddRoomModal()">
+  <div class="modal">
+    <div class="modal-title">Ruimte / Locatie toevoegen</div>
+    <div class="form-group">
+      <label>Naam van de ruimte</label>
+      <input type="text" id="newRoomName" placeholder="bv. Machinekamer Noord" autocomplete="off" maxlength="50">
+    </div>
+    <div class="form-group">
+      <label>Beschrijving <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label>
+      <input type="text" id="newRoomDesc" placeholder="bv. gelijkvloers, links van de ingang" autocomplete="off" maxlength="100">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeAddRoomModal()">Annuleren</button>
+      <button class="btn-primary" style="margin-top:0" onclick="saveNewRoom()">Opslaan</button>
     </div>
   </div>
 </div>
@@ -1099,6 +1132,37 @@ function toggleRoomDropdown(inputId, dropId) {
     drop.appendChild(item);
   });
   drop.classList.add("open");
+}
+
+// ============================================================
+// RUIMTE TOEVOEGEN
+// ============================================================
+function openAddRoomModal() {
+  document.getElementById("newRoomName").value = "";
+  document.getElementById("newRoomDesc").value = "";
+  document.getElementById("addRoomModal").classList.add("open");
+  setTimeout(function() { document.getElementById("newRoomName").focus(); }, 100);
+}
+
+function closeAddRoomModal() {
+  document.getElementById("addRoomModal").classList.remove("open");
+}
+
+function saveNewRoom() {
+  var name = document.getElementById("newRoomName").value.trim();
+  if (!name) { showToast("Geef een naam op voor de ruimte.", true); return; }
+  if (ROOM_INFO.hasOwnProperty(name)) { showToast("Deze ruimte bestaat al.", true); return; }
+  var desc = document.getElementById("newRoomDesc").value.trim();
+  ROOM_INFO[name] = desc;
+  try {
+    var stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    stored[name] = desc;
+    localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+  } catch(e) {}
+  var dl = document.getElementById("roomSuggestions");
+  if (dl) { var opt = document.createElement("option"); opt.value = name; dl.appendChild(opt); }
+  closeAddRoomModal();
+  showToast("Ruimte \"" + name + "\" toegevoegd.");
 }
 
 // ============================================================
