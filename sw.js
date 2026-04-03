@@ -1,4 +1,4 @@
-var CACHE_NAME = "ekast-v5";
+var CACHE_NAME = "ekast-v6";
 var ASSETS = [
   "./index.html",
   "./manifest.json",
@@ -36,22 +36,24 @@ self.addEventListener("fetch", function(e) {
   if (e.request.url.includes("script.google.com")) return;
 
   e.respondWith(
-    caches.match(e.request).then(function(cached) {
-      if (cached) return cached;
-      return fetch(e.request).then(function(response) {
-        if (response && response.ok) {
-          var clone = response.clone();
-          caches.open(CACHE_NAME).then(function(cache) {
-            cache.put(e.request, clone);
-          });
-        }
-        return response;
-      });
-    }).catch(function() {
-      // Offline fallback: stuur de gecachete app terug
-      if (e.request.mode === "navigate") {
-        return caches.match("./index.html");
+    fetch(e.request).then(function(response) {
+      // Netwerk succesvol — cache updaten en response teruggeven
+      if (response && response.ok) {
+        var clone = response.clone();
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(e.request, clone);
+        });
       }
+      return response;
+    }).catch(function() {
+      // Netwerk mislukt — probeer uit cache te serveren
+      return caches.match(e.request).then(function(cached) {
+        if (cached) return cached;
+        // Offline fallback: stuur de gecachete app terug
+        if (e.request.mode === "navigate") {
+          return caches.match("./index.html");
+        }
+      });
     })
   );
 });
