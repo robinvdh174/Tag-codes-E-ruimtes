@@ -1,6 +1,8 @@
-var CACHE_NAME = "ekast-v6";
+var CACHE_NAME = "ekast-v7";
 var ASSETS = [
   "./index.html",
+  "./style.css",
+  "./app.js",
   "./manifest.json",
   "./ekast-icon.svg",
   "./apple-touch-icon.png"
