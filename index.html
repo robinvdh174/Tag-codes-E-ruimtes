@@ -326,6 +326,16 @@ var ROOM_INFO = {
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Bevestiging modal (vervangt browser confirm) -->
+<div class="status-popup" id="confirmOverlay" onclick="confirmNee()">
+  <div class="status-popup-card" onclick="event.stopPropagation()" style="max-width:320px;">
+    <div class="status-popup-title" style="color:var(--danger);font-size:.85rem;">&#9888; Bevestiging vereist</div>
+    <p id="confirmMsg" style="font-size:.88rem;color:var(--text);margin:.6rem 0 1.1rem;line-height:1.55;text-align:left;"></p>
+    <button class="status-btn-keuze status-btn-los" onclick="confirmJa()" style="margin-bottom:.5rem;">Ja, doorgaan</button>
+    <button class="status-btn-keuze" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);" onclick="confirmNee()">Annuleren</button>
+  </div>
+</div>
 <div class="status-popup" id="statusPopup" onclick="closeStatusKeuze()">
   <div class="status-popup-card" onclick="event.stopPropagation()">
     <div class="status-popup-title" id="statusPopupTitle">Kies status</div>
@@ -560,7 +570,8 @@ async function init() {
     });
     document.addEventListener("keydown", function(e) {
       if (e.key === "Escape") {
-        if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
+        if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
+        else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
         else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
@@ -808,8 +819,16 @@ function kiesStatus(newStatus) {
   if (newStatus === "") {
     var item = data.find(function(d) { return d.id === id; });
     var kastNaam = item ? (item.code || item.location || "deze kast") : "deze kast";
-    if (!confirm("LET OP: Je zet " + kastNaam + " terug naar 'In bedrijf'.\n\nDit betekent dat de kast weer onder spanning kan staan.\n\nWeet je dit zeker?")) return;
+    showConfirm(
+      "LET OP: Je zet \u201c" + kastNaam + "\u201d terug naar In bedrijf. Dit betekent dat de kast weer onder spanning kan staan. Weet je dit zeker?",
+      function() { _openNaamModal(id, newStatus); }
+    );
+    return;
   }
+  _openNaamModal(id, newStatus);
+}
+
+function _openNaamModal(id, newStatus) {
   _statusNaamId = id;
   _statusNaamNieuw = newStatus;
   var titelEl = document.getElementById("statusNaamTitel");
@@ -825,6 +844,21 @@ function kiesStatus(newStatus) {
   document.getElementById("statusNaamError").textContent = "";
   document.getElementById("statusNaamOverlay").classList.add("open");
   setTimeout(function() { var el = document.getElementById("statusNaamInput"); if (el) el.focus(); }, 150);
+}
+
+var _confirmCallback = null;
+function showConfirm(msg, onConfirm) {
+  document.getElementById("confirmMsg").textContent = msg;
+  _confirmCallback = onConfirm;
+  document.getElementById("confirmOverlay").classList.add("open");
+}
+function confirmJa() {
+  document.getElementById("confirmOverlay").classList.remove("open");
+  if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+}
+function confirmNee() {
+  document.getElementById("confirmOverlay").classList.remove("open");
+  _confirmCallback = null;
 }
 function sluitStatusNaamModal() {
   document.getElementById("statusNaamOverlay").classList.remove("open");
@@ -884,6 +918,8 @@ async function setStatus(id, newStatus, naam, datum) {
     await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    var statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
+    await logAction(statusLabel + (naam ? " \u2014 " + naam : ""), updatedItem.code, updatedItem.location, "Logboek Status");
     await syncFromSheets(true);
   } catch(e) {
     // Server faalde — terugdraaien
