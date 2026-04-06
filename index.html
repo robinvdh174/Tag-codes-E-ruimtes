@@ -546,6 +546,36 @@ function manualSync() {
 }
 
 // ============================================================
+// RUIMTES SYNCHEN — haalt custom ruimtes op uit Sheets
+// en deelt ze met alle toestellen
+// ============================================================
+async function syncRooms() {
+  if (!SCRIPT_URL) return;
+  try {
+    var resp = await fetchWithTimeout(
+      SCRIPT_URL + "?action=getRooms&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
+      15000
+    );
+    if (!resp || !resp.ok) return;
+    var rooms = await resp.json();
+    if (!Array.isArray(rooms)) return;
+    rooms.forEach(function(r) {
+      if (!r.name || ROOM_INFO.hasOwnProperty(r.name)) return;
+      ROOM_INFO[r.name] = r.desc || "";
+      try {
+        var stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+        stored[r.name] = r.desc || "";
+        localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+      } catch(e) {}
+      var dl = document.getElementById("roomSuggestions");
+      if (dl) { var opt = document.createElement("option"); opt.value = r.name; dl.appendChild(opt); }
+    });
+  } catch(e) {
+    console.warn("syncRooms mislukt:", e);
+  }
+}
+
+// ============================================================
 // INITIALISATIE
 // ============================================================
 async function init() {
@@ -590,6 +620,7 @@ async function init() {
   if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
 
   syncFromSheets(false);
+  syncRooms();
   syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
 }
 
@@ -1184,11 +1215,13 @@ function closeAddRoomModal() {
   document.getElementById("addRoomModal").classList.remove("open");
 }
 
-function saveNewRoom() {
+async function saveNewRoom() {
   var name = document.getElementById("newRoomName").value.trim();
   if (!name) { showToast("Geef een naam op voor de ruimte.", true); return; }
   if (ROOM_INFO.hasOwnProperty(name)) { showToast("Deze ruimte bestaat al.", true); return; }
   var desc = document.getElementById("newRoomDesc").value.trim();
+
+  // Lokaal opslaan
   ROOM_INFO[name] = desc;
   try {
     var stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
@@ -1199,6 +1232,15 @@ function saveNewRoom() {
   if (dl) { var opt = document.createElement("option"); opt.value = name; dl.appendChild(opt); }
   closeAddRoomModal();
   showToast("Ruimte \"" + name + "\" toegevoegd.");
+
+  // Syncen naar Sheets zodat alle toestellen de ruimte zien
+  if (SCRIPT_URL) {
+    try {
+      await sheetAction({ action: "addRoom", name: encodeURIComponent(name), desc: encodeURIComponent(desc) });
+    } catch(e) {
+      console.warn("Ruimte sync mislukt:", e);
+    }
+  }
 }
 
 // ============================================================
