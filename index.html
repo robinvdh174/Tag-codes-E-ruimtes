@@ -1236,7 +1236,7 @@ async function saveNewRoom() {
   // Syncen naar Sheets zodat alle toestellen de ruimte zien
   if (SCRIPT_URL) {
     try {
-      await sheetAction({ action: "addRoom", name: encodeURIComponent(name), desc: encodeURIComponent(desc) });
+      await sheetAction({ action: "addRoom", name: name, desc: desc });
     } catch(e) {
       console.warn("Ruimte sync mislukt:", e);
     }
