@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Mijn Financien</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Financien">
+<meta name="theme-color" content="#060d1a">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>💰</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{background:#060d1a;font-family:'DM Sans','Segoe UI',sans-serif;color:#e2e8f0;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px;}
+input,select,button{outline:none;font-family:inherit;}
+.card{background:#0d1627;border:1px solid #1a2744;border-radius:14px;}
+.nb{background:none;border:none;cursor:pointer;padding:8px 13px;border-radius:9px;font-size:12px;font-weight:600;transition:.2s;color:#475569;white-space:nowrap;}
+.nb.act{background:#1e3a5f;color:#60a5fa;}
+.nb:not(.act):active{color:#94a3b8;background:#0d1627;}
+.chip{background:#0d1627;border:1px solid #1a2744;border-radius:20px;padding:6px 14px;font-size:12px;color:#475569;cursor:pointer;transition:.2s;white-space:nowrap;font-family:inherit;}
+.chip.on{background:#1e3a5f;border-color:#3b82f6;color:#60a5fa;}
+.chip:active:not(.on){border-color:#334155;color:#94a3b8;}
+.fi{background:#060d1a;border:1px solid #1a2744;border-radius:9px;color:#e2e8f0;font-size:16px;padding:11px 12px;width:100%;transition:.2s;-webkit-appearance:none;}
+.fi:focus{border-color:#3b82f6;}
+.fi option{background:#0d1627;}
+.toggle{display:flex;background:#060d1a;border-radius:9px;padding:3px;gap:2px;}
+.tgl{background:none;border:none;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:14px;font-weight:500;color:#475569;transition:.2s;flex:1;text-align:center;}
+.tgl.on{background:#0d1627;color:#e2e8f0;}
+.submit{background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;border-radius:10px;color:#fff;cursor:pointer;font-size:15px;font-weight:600;padding:14px;width:100%;transition:.2s;}
+.submit:active{opacity:.85;}
+.trow{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #0a1120;transition:.15s;}
+.trow:last-child{border-bottom:none;}
+.trow:active{background:#0f1d30;}
+.rb{background:none;border:none;cursor:pointer;color:#1e3a5f;padding:8px;border-radius:7px;transition:.15s;font-size:16px;line-height:1;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;}
+.rb:active{background:#1a2744;color:#e2e8f0;}
+.tag{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+.srt{background:none;border:1px solid #1a2744;border-radius:7px;color:#475569;cursor:pointer;padding:6px 12px;font-size:12px;transition:.2s;font-family:inherit;min-height:36px;}
+.srt.on{background:#1e3a5f;border-color:#3b82f6;color:#60a5fa;}
+.srt:active:not(.on){border-color:#334155;color:#94a3b8;}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:200;backdrop-filter:blur(8px);}
+.dialog{background:#0d1627;border:1px solid #1a2744;border-radius:18px;padding:24px;max-width:380px;width:92%;}
+.prbar{height:8px;border-radius:4px;background:#0a1120;overflow:hidden;}
+.icon-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;}
+.icon-opt{background:none;border:1px solid #1a2744;border-radius:7px;cursor:pointer;font-size:18px;padding:6px;transition:.2s;aspect-ratio:1;display:flex;align-items:center;justify-content:center;min-height:40px;}
+.icon-opt.on{background:#1e3a5f;border-color:#3b82f6;}
+.icon-opt:active:not(.on){background:#1a2744;}
+.col-grid{display:flex;flex-wrap:wrap;gap:8px;}
+.col-opt{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.2s;flex-shrink:0;}
+.col-opt.on{border-color:#fff;transform:scale(1.15);}
+.scroll-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 16px 90px;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#0d1627;border-top:1px solid #1a2744;display:flex;justify-content:space-around;align-items:flex-end;padding:6px 0;padding-bottom:max(6px,env(safe-area-inset-bottom));z-index:100;}
+.nav-btn{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 12px;color:#475569;min-width:54px;transition:.2s;}
+.nav-btn.act{color:#60a5fa;}
+.nav-btn span.ni{font-size:22px;line-height:1;}
+.nav-btn span.nl{font-size:10px;font-weight:500;}
+.nav-btn.act span.nl{font-weight:700;}
+.add-nav{background:linear-gradient(135deg,#3b82f6,#2563eb);width:50px;height:50px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:-18px;box-shadow:0 2px 16px rgba(59,130,246,.35);font-size:24px;color:#fff;transition:.2s;}
+.add-nav:active{transform:scale(.92);}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.save-toast{animation:fadeIn .2s ease;}
+</style>
+</head>
+<body>
+<div id="root">
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#060d1a;color:#475569;font-family:monospace;gap:12px">
+<div style="font-size:32px">💰</div>
+<div style="font-size:13px">Laden...</div>
+</div>
+</div>
+<script type="text/babel">
+/* ── React hooks ── */
+const { useState, useEffect, useCallback, useMemo } = React;
+
+/* ── Storage keys ── */
+const KEY_TX   = "mijnfinancien_tx";
+const KEY_CATS = "mijnfinancien_cats";
+
+/* ── localStorage helpers (sync, reliable) ── */
+function storageGet(key, fallback) {
+  try {
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : fallback;
+  } catch(e) {
+    console.warn("Storage read error:", e);
+    return fallback;
+  }
+}
+function storageSet(key, val) {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+    return true;
+  } catch(e) {
+    console.error("Storage write error:", e);
+    return false;
+  }
+}
+
+/* ── Default categories ── */
+const DEFAULT_CATS = [
+  { id:"wonen",        label:"Wonen",         icon:"\u{1F3E0}", color:"#6366f1", budget:900,  isIncome:false },
+  { id:"boodschappen", label:"Boodschappen",  icon:"\u{1F6D2}", color:"#f59e0b", budget:300,  isIncome:false },
+  { id:"transport",    label:"Transport",     icon:"\u{1F697}", color:"#3b82f6", budget:150,  isIncome:false },
+  { id:"energie",      label:"Energie",       icon:"\u26A1",    color:"#10b981", budget:150,  isIncome:false },
+  { id:"horeca",       label:"Horeca",        icon:"\u{1F37D}\uFE0F", color:"#ef4444", budget:100,  isIncome:false },
+  { id:"gezondheid",   label:"Gezondheid",    icon:"\u{1F48A}", color:"#ec4899", budget:80,   isIncome:false },
+  { id:"abonnementen", label:"Abonnementen",  icon:"\u{1F4FA}", color:"#8b5cf6", budget:50,   isIncome:false },
+  { id:"hobby",        label:"Hobby",         icon:"\u{1F3AE}", color:"#f97316", budget:100,  isIncome:false },
+  { id:"overig",       label:"Overig",        icon:"\u{1F4E6}", color:"#94a3b8", budget:100,  isIncome:false },
+  { id:"inkomen",      label:"Inkomen",       icon:"\u{1F4BC}", color:"#22c55e", budget:0,    isIncome:true  },
+];
+
+const PRESET_COLORS = ["#6366f1","#f59e0b","#3b82f6","#10b981","#ef4444","#ec4899","#8b5cf6","#f97316","#94a3b8","#22c55e","#06b6d4","#84cc16","#f43f5e","#a78bfa"];
+const PRESET_ICONS  = ["\u{1F3E0}","\u{1F6D2}","\u{1F697}","\u26A1","\u{1F37D}\uFE0F","\u{1F48A}","\u{1F4FA}","\u{1F3AE}","\u{1F4E6}","\u{1F4BC}","\u2708\uFE0F","\u{1F43E}","\u{1F393}","\u{1F487}","\u{1F3B5}","\u{1F3CB}\uFE0F","\u{1F9F4}","\u{1F9FE}","\u{1F3E6}","\u{1F490}","\u{1F9D2}","\u{1F474}","\u{1F431}","\u{1F436}"];
+const MONTHS = ["Jan","Feb","Mrt","Apr","Mei","Jun","Jul","Aug","Sep","Okt","Nov","Dec"];
+
+const fmt     = (n) => new Intl.NumberFormat("nl-BE",{style:"currency",currency:"EUR"}).format(n);
+const fmtDate = (iso) => new Date(iso).toLocaleDateString("nl-BE",{day:"2-digit",month:"short",year:"numeric"});
+const nowKey  = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); };
+const uid     = () => "cat_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+
+const DEMO_TX = [
+  {id:1,  date:"2026-03-01",description:"Loon maart",         category:"inkomen",      amount: 3200  },
+  {id:2,  date:"2026-03-02",description:"Huur",               category:"wonen",        amount: -850  },
+  {id:3,  date:"2026-03-05",description:"Delhaize",           category:"boodschappen", amount: -92.4 },
+  {id:4,  date:"2026-03-07",description:"Tankbeurt",          category:"transport",    amount: -78.6 },
+  {id:5,  date:"2026-03-10",description:"Luminus energie",    category:"energie",      amount: -134  },
+  {id:6,  date:"2026-03-12",description:"Restaurant De Hoek", category:"horeca",       amount: -43   },
+  {id:7,  date:"2026-03-15",description:"Netflix + Spotify",  category:"abonnementen", amount: -22.98},
+  {id:8,  date:"2026-03-18",description:"Apotheek",           category:"gezondheid",   amount: -31.5 },
+  {id:9,  date:"2026-03-20",description:"Colruyt",            category:"boodschappen", amount: -67.2 },
+  {id:10, date:"2026-03-25",description:"Boardgame",          category:"hobby",        amount: -54   },
+  {id:11, date:"2026-04-01",description:"Loon april",         category:"inkomen",      amount: 3200  },
+  {id:12, date:"2026-04-02",description:"Huur",               category:"wonen",        amount: -850  },
+  {id:13, date:"2026-04-03",description:"Aldi",               category:"boodschappen", amount: -55.3 },
+  {id:14, date:"2026-04-04",description:"Treinticket",        category:"transport",    amount: -28   },
+];
+
+function blankForm() {
+  return { date:new Date().toISOString().slice(0,10), description:"", category:"overig", amount:"", type:"uitgave" };
+}
+
+/* ── Custom chart components (no Recharts dependency) ── */
+function DonutChart({ data }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return null;
+  const segments = [];
+  let offset = 0;
+  data.forEach(d => {
+    const pct = (d.value / total) * 100;
+    segments.push(d.color+" "+offset.toFixed(2)+"% "+(offset+pct).toFixed(2)+"%");
+    offset += pct;
+  });
+  return (
+    <div style={{width:120,height:120,borderRadius:"50%",background:"conic-gradient("+segments.join(", ")+")",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+      <div style={{width:70,height:70,borderRadius:"50%",background:"#0d1627"}} />
+    </div>
+  );
+}
+
+function TrendChart({ data }) {
+  const maxVal = Math.max(...data.flatMap(d => [d.inkomen||0, d.uitgaven||0]), 1);
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <span style={{width:8,height:8,borderRadius:2,background:"#22c55e",display:"inline-block"}} />
+          <span style={{fontSize:11,color:"#475569"}}>Inkomen</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <span style={{width:8,height:8,borderRadius:2,background:"#ef4444",display:"inline-block"}} />
+          <span style={{fontSize:11,color:"#475569"}}>Uitgaven</span>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",height:130,gap:6,borderBottom:"1px solid #1a2744",paddingBottom:4}}>
+        {data.map((d, i) => (
+          <div key={i} style={{flex:1,display:"flex",gap:2,alignItems:"flex-end",height:"100%"}}>
+            <div style={{flex:1,background:"#22c55e",borderRadius:"3px 3px 0 0",height:d.inkomen>0?Math.max((d.inkomen/maxVal)*100,2)+"%":"0%",transition:"height .3s"}} />
+            <div style={{flex:1,background:"#ef4444",borderRadius:"3px 3px 0 0",height:d.uitgaven>0?Math.max((d.uitgaven/maxVal)*100,2)+"%":"0%",transition:"height .3s"}} />
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,paddingTop:4}}>
+        {data.map((d, i) => (
+          <div key={i} style={{flex:1,textAlign:"center",fontSize:9,color:"#334155"}}>{d.name}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Transaction Row component ── */
+function TRow({ t, cat, onEdit, onDelete }) {
+  return (
+    <div className="trow">
+      <span style={{fontSize:18,flexShrink:0}}>{cat.icon}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.description}</div>
+        <div style={{fontSize:10,color:"#334155",marginTop:1}}>{fmtDate(t.date)}</div>
+      </div>
+      <span className="tag" style={{background:cat.color+"18",color:cat.color,border:"1px solid "+cat.color+"30"}}>{cat.label}</span>
+      <span style={{fontSize:13,fontWeight:700,color:t.amount>0?"#22c55e":"#f87171",minWidth:68,textAlign:"right",flexShrink:0}}>
+        {t.amount>0?"+":""}{fmt(t.amount)}
+      </span>
+      <button className="rb" onClick={()=>onEdit(t)}>&#9998;</button>
+      <button className="rb" onClick={()=>onDelete(t.id)}>&#128465;</button>
+    </div>
+  );
+}
+
+const LS = { fontSize:11, color:"#475569", fontWeight:600, display:"block", marginBottom:6, textTransform:"uppercase", letterSpacing:".5px" };
+
+/* ══════════════════════════════════════════════════════════════════════ */
+/*                          MAIN APP COMPONENT                          */
+/* ══════════════════════════════════════════════════════════════════════ */
+function App() {
+  /* ── Load data synchronously from localStorage ── */
+  const initTx   = () => { const d = storageGet(KEY_TX, null);   return (Array.isArray(d) && d.length > 0) ? d : DEMO_TX; };
+  const initCats = () => { const d = storageGet(KEY_CATS, null); return (Array.isArray(d) && d.length > 0 && d[0].id) ? d : DEFAULT_CATS; };
+
+  const [tx,       setTx]      = useState(initTx);
+  const [cats,     setCats]    = useState(initCats);
+  const [saveOk,   setSaveOk]  = useState(null);
+  const [view,     setView]    = useState("dashboard");
+  const [form,     setForm]    = useState(blankForm);
+  const [editId,   setEditId]  = useState(null);
+  const [fMonth,   setFMonth]  = useState(null);
+  const [search,   setSearch]  = useState("");
+  const [sortBy,   setSortBy]  = useState("date");
+  const [delConf,  setDelConf] = useState(null);
+  const [modal,    setModal]   = useState(null);
+  const [catForm,  setCatForm] = useState({ label:"", icon:"\u{1F3F7}\uFE0F", color:"#6366f1", budget:0, isIncome:false });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /* ── Save helpers with visual feedback ── */
+  const saveTxData = useCallback((data) => {
+    storageSet(KEY_TX, data);
+    setSaveOk(true);
+    setTimeout(() => setSaveOk(null), 1500);
+  }, []);
+
+  const saveCatData = useCallback((data) => {
+    storageSet(KEY_CATS, data);
+  }, []);
+
+  const setAndSaveTx   = (d) => { setTx(d);   saveTxData(d);   };
+  const setAndSaveCats = (d) => { setCats(d);  saveCatData(d);  };
+
+  /* ── Category helpers ── */
+  const getCat      = (id) => cats.find(c => c.id === id) || { id:"overig", label:"Overig", icon:"\u{1F4E6}", color:"#94a3b8", budget:100, isIncome:false };
+  const expenseCats = useMemo(() => cats.filter(c => !c.isIncome), [cats]);
+  const incomeCats  = useMemo(() => cats.filter(c =>  c.isIncome), [cats]);
+
+  const openAddCat  = () => { setCatForm({ label:"", icon:"\u{1F3F7}\uFE0F", color:"#6366f1", budget:0, isIncome:false }); setModal("addCat"); };
+  const openEditCat = (c) => { setCatForm({ label:c.label, icon:c.icon, color:c.color, budget:c.budget, isIncome:c.isIncome }); setModal(c.id); };
+
+  const saveCat = () => {
+    if (!catForm.label.trim()) return;
+    const next = modal === "addCat"
+      ? [...cats, { id:uid(), ...catForm }]
+      : cats.map(c => c.id === modal ? { ...c, ...catForm } : c);
+    setAndSaveCats(next);
+    setModal(null);
+  };
+
+  const deleteCat = (id) => {
+    setAndSaveCats(cats.filter(c => c.id !== id));
+    setAndSaveTx(tx.map(t => t.category === id ? { ...t, category:"overig" } : t));
+  };
+
+  /* ── Transaction helpers ── */
+  const handleSubmit = () => {
+    if (!form.description.trim() || !form.amount) return;
+    const val = parseFloat(String(form.amount).replace(",","."));
+    if (isNaN(val) || val <= 0) return;
+    const signed = form.type === "uitgave" ? -Math.abs(val) : Math.abs(val);
+    const entry  = { date:form.date, description:form.description, category:form.category, amount:signed };
+    if (editId !== null) {
+      setAndSaveTx(tx.map(t => t.id === editId ? { ...t, ...entry } : t));
+      setEditId(null);
+    } else {
+      setAndSaveTx([...tx, { id:Date.now(), ...entry }]);
+    }
+    setForm(blankForm());
+    setView("transacties");
+  };
+
+  const startEdit = (t) => {
+    setForm({ date:t.date, description:t.description, category:t.category, amount:String(Math.abs(t.amount)), type:t.amount<0?"uitgave":"inkomen" });
+    setEditId(t.id); setView("toevoegen");
+  };
+
+  const doDelete = () => { setAndSaveTx(tx.filter(t => t.id !== delConf)); setDelConf(null); };
+  const goView   = (v) => { setEditId(null); setForm(blankForm()); setView(v); };
+
+  /* ── Data export/import ── */
+  const exportData = () => {
+    const data = { version:1, exportDate:new Date().toISOString(), transactions:tx, categories:cats };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "financien-backup-"+new Date().toISOString().slice(0,10)+".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.transactions && Array.isArray(data.transactions)) setAndSaveTx(data.transactions);
+        if (data.categories && Array.isArray(data.categories)) setAndSaveCats(data.categories);
+        setSettingsOpen(false);
+      } catch(err) {
+        alert("Ongeldig bestand: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const clearAllData = () => {
+    if (confirm("Weet je zeker dat je ALLE gegevens wilt wissen? Dit kan niet ongedaan worden gemaakt.")) {
+      setAndSaveTx([]);
+      setAndSaveCats(DEFAULT_CATS);
+      setSettingsOpen(false);
+    }
+  };
+
+  /* ── Computed values ── */
+  const availMonths  = useMemo(() => [...new Set(tx.map(t => t.date.slice(0,7)))].sort().reverse(), [tx]);
+  const currentMonth = useMemo(() => nowKey(), []);
+  const activeMonth  = fMonth || currentMonth;
+  const monthTs      = useMemo(() => tx.filter(t => t.date.startsWith(activeMonth)), [tx, activeMonth]);
+  const monthIn      = useMemo(() => monthTs.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0), [monthTs]);
+  const monthUt      = useMemo(() => monthTs.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0), [monthTs]);
+  const monthNt      = monthIn - monthUt;
+  const spaar        = monthIn > 0 ? Math.round((monthNt/monthIn)*100) : 0;
+  const totSaldo     = useMemo(() => tx.reduce((s,t)=>s+t.amount,0), [tx]);
+
+  const biggestExpense = useMemo(() => {
+    const ex = tx.filter(t=>t.amount<0);
+    return ex.length ? ex.reduce((m,t)=>Math.abs(t.amount)>Math.abs(m.amount)?t:m) : null;
+  },[tx]);
+
+  const pieData = useMemo(() => expenseCats.map(c => ({
+    name:c.label, icon:c.icon, color:c.color,
+    value:monthTs.filter(t=>t.category===c.id&&t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0)
+  })).filter(d=>d.value>0), [monthTs, expenseCats]);
+
+  const budgetRows = useMemo(() => expenseCats.map(c => {
+    const spent  = monthTs.filter(t=>t.category===c.id&&t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+    const budget = c.budget || 0;
+    const pct    = budget>0 ? Math.min(100,Math.round((spent/budget)*100)) : 0;
+    return { ...c, spent:spent, pct:pct, over:budget>0&&spent>budget };
+  }).filter(c=>c.spent>0||c.budget>0), [monthTs, expenseCats]);
+
+  const trendData = useMemo(() => {
+    const now = new Date();
+    return Array.from({length:6},(_,i)=>{
+      const d  = new Date(now.getFullYear(),now.getMonth()-5+i,1);
+      const m  = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+      const ts = tx.filter(t=>t.date.startsWith(m));
+      return {
+        name:     MONTHS[d.getMonth()]+" '"+String(d.getFullYear()).slice(2),
+        inkomen:  ts.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0),
+        uitgaven: ts.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0),
+      };
+    });
+  },[tx]);
+
+  const filtered = useMemo(()=>{
+    let ts = fMonth ? tx.filter(t=>t.date.startsWith(fMonth)) : tx;
+    if (search.trim()) {
+      const q=search.toLowerCase();
+      ts=ts.filter(t=>t.description.toLowerCase().includes(q)||getCat(t.category).label.toLowerCase().includes(q));
+    }
+    return ts;
+  },[tx,fMonth,search,cats]);
+
+  const sorted = useMemo(()=>[...filtered].sort((a,b)=>{
+    if (sortBy==="date")   return b.date.localeCompare(a.date);
+    if (sortBy==="amount") return Math.abs(b.amount)-Math.abs(a.amount);
+    return a.category.localeCompare(b.category);
+  }),[filtered,sortBy]);
+
+  const monthLabel = (m) => { if(!m)return"Alle maanden"; const p=m.split("-"); return MONTHS[parseInt(p[1])-1]+" "+p[0]; };
+
+  const formCats = form.type === "uitgave" ? expenseCats : incomeCats;
+
+  /* ── RENDER ── */
+  return (
+    <div style={{height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+      {/* Delete confirmation dialog */}
+      {delConf && (
+        <div className="overlay" onClick={()=>setDelConf(null)}>
+          <div className="dialog" onClick={e=>e.stopPropagation()} style={{textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:10}}>{"\u{1F5D1}\uFE0F"}</div>
+            <h3 style={{fontSize:16,fontWeight:600,marginBottom:6}}>Verwijderen?</h3>
+            <p style={{fontSize:13,color:"#475569",marginBottom:20,lineHeight:1.5}}>
+              <em style={{color:"#94a3b8"}}>"{tx.find(t=>t.id===delConf)?.description}"</em><br/>
+              Dit kan niet ongedaan worden gemaakt.
+            </p>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setDelConf(null)} style={{flex:1,background:"#1a2744",border:"none",borderRadius:9,color:"#94a3b8",cursor:"pointer",padding:"11px",fontSize:14,fontFamily:"inherit"}}>Annuleren</button>
+              <button onClick={doDelete} style={{flex:1,background:"#ef4444",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",padding:"11px",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>Verwijderen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category modal */}
+      {modal && (
+        <div className="overlay" onClick={()=>setModal(null)}>
+          <div className="dialog" onClick={e=>e.stopPropagation()} style={{maxHeight:"88vh",display:"flex",flexDirection:"column"}}>
+            <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>{modal==="addCat"?"Nieuwe categorie":"Categorie bewerken"}</h3>
+            <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={LS}>Naam</label>
+                <input className="fi" placeholder="bv. Reizen" value={catForm.label} onChange={e=>setCatForm(f=>({...f,label:e.target.value}))}/>
+              </div>
+              <div>
+                <label style={LS}>Type</label>
+                <div className="toggle">
+                  {[["false","Uitgave"],["true","Inkomen"]].map(([v,l])=>(
+                    <button key={v} className={"tgl"+(String(catForm.isIncome)===v?" on":"")} onClick={()=>setCatForm(f=>({...f,isIncome:v==="true"}))}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={LS}>Icoon</label>
+                <div className="icon-grid">
+                  {PRESET_ICONS.map(ic=>(
+                    <button key={ic} className={"icon-opt"+(catForm.icon===ic?" on":"")} onClick={()=>setCatForm(f=>({...f,icon:ic}))}>{ic}</button>
+                  ))}
+                </div>
+                <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,color:"#475569"}}>Of typ zelf:</span>
+                  <input className="fi" style={{width:60,textAlign:"center",fontSize:18,padding:"4px"}} value={catForm.icon} onChange={e=>setCatForm(f=>({...f,icon:e.target.value}))} maxLength={2}/>
+                </div>
+              </div>
+              <div>
+                <label style={LS}>Kleur</label>
+                <div className="col-grid">
+                  {PRESET_COLORS.map(c=>(
+                    <div key={c} className={"col-opt"+(catForm.color===c?" on":"")} style={{background:c}} onClick={()=>setCatForm(f=>({...f,color:c}))}/>
+                  ))}
+                </div>
+              </div>
+              {!catForm.isIncome && (
+                <div>
+                  <label style={LS}>Maandbudget (&euro;)</label>
+                  <input className="fi" type="number" min="0" step="10" placeholder="0" value={catForm.budget} onChange={e=>setCatForm(f=>({...f,budget:parseFloat(e.target.value)||0}))}/>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:14}}>
+              {modal !== "addCat" && (
+                <button onClick={()=>{deleteCat(modal);setModal(null);}} style={{background:"#7f1d1d22",border:"1px solid #7f1d1d",borderRadius:9,color:"#ef4444",cursor:"pointer",padding:"9px 14px",fontSize:14,fontFamily:"inherit",minHeight:40}}>Wis</button>
+              )}
+              <button onClick={()=>setModal(null)} style={{flex:1,background:"#1a2744",border:"none",borderRadius:9,color:"#94a3b8",cursor:"pointer",padding:"11px",fontSize:14,fontFamily:"inherit"}}>Annuleren</button>
+              <button onClick={saveCat} style={{flex:1,background:"linear-gradient(135deg,#3b82f6,#2563eb)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",padding:"11px",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>Opslaan</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings modal */}
+      {settingsOpen && (
+        <div className="overlay" onClick={()=>setSettingsOpen(false)}>
+          <div className="dialog" onClick={e=>e.stopPropagation()}>
+            <h3 style={{fontSize:15,fontWeight:700,marginBottom:16}}>Instellingen</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button onClick={exportData} style={{background:"#1a2744",border:"none",borderRadius:9,color:"#e2e8f0",cursor:"pointer",padding:"12px",fontSize:14,fontFamily:"inherit",textAlign:"left"}}>
+                {"\u{1F4E5}"} Exporteer gegevens (JSON)
+              </button>
+              <label style={{background:"#1a2744",borderRadius:9,color:"#e2e8f0",cursor:"pointer",padding:"12px",fontSize:14,fontFamily:"inherit",textAlign:"left",display:"block"}}>
+                {"\u{1F4E4}"} Importeer gegevens
+                <input type="file" accept=".json" onChange={importData} style={{display:"none"}} />
+              </label>
+              <button onClick={clearAllData} style={{background:"#7f1d1d22",border:"1px solid #7f1d1d",borderRadius:9,color:"#ef4444",cursor:"pointer",padding:"12px",fontSize:14,fontFamily:"inherit",textAlign:"left"}}>
+                {"\u{1F5D1}\uFE0F"} Wis alle gegevens
+              </button>
+              <div style={{fontSize:11,color:"#334155",marginTop:4,lineHeight:1.5}}>
+                Je gegevens worden lokaal opgeslagen op dit toestel. Maak regelmatig een backup via exporteren.
+              </div>
+            </div>
+            <button onClick={()=>setSettingsOpen(false)} style={{width:"100%",background:"#1a2744",border:"none",borderRadius:9,color:"#94a3b8",cursor:"pointer",padding:"11px",fontSize:14,fontFamily:"inherit",marginTop:14}}>Sluiten</button>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER */}
+      <div style={{background:"#060d1a",borderBottom:"1px solid #1a2744",padding:"10px 16px 8px",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div>
+              <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:19,fontWeight:400,color:"#f8fafc",lineHeight:1.2}}>{"\u{1F4B0}"} Mijn Financien</h1>
+              <p style={{fontSize:11,color:"#334155",marginTop:1}}>
+                Saldo: <span style={{color:totSaldo>=0?"#22c55e":"#ef4444",fontWeight:700}}>{fmt(totSaldo)}</span>
+              </p>
+            </div>
+            {saveOk && (
+              <span className="save-toast" style={{fontSize:11,color:"#22c55e",background:"#052e16",border:"1px solid #14532d",borderRadius:20,padding:"3px 10px"}}>
+                {"\u2713"} Opgeslagen
+              </span>
+            )}
+          </div>
+          <button onClick={()=>setSettingsOpen(true)} style={{background:"none",border:"1px solid #1a2744",borderRadius:9,cursor:"pointer",padding:"8px 10px",fontSize:16,color:"#475569",minWidth:40,minHeight:40,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {"\u2699\uFE0F"}
+          </button>
+        </div>
+      </div>
+
+      {/* MONTH FILTER */}
+      <div style={{background:"#060d1a",borderBottom:"1px solid #0d1a2d",padding:"7px 16px",flexShrink:0}}>
+        <div style={{display:"flex",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <button className={"chip"+(!fMonth?" on":"")} onClick={()=>setFMonth(null)}>Alles</button>
+          {availMonths.map(m=>{const p=m.split("-");return(
+            <button key={m} className={"chip"+(fMonth===m?" on":"")} onClick={()=>setFMonth(m)}>
+              {MONTHS[parseInt(p[1])-1]} {p[0]}
+            </button>
+          );})}
+        </div>
+      </div>
+
+      {/* SCROLLABLE CONTENT */}
+      <div className="scroll-content">
+
+        {/* DASHBOARD VIEW */}
+        {view==="dashboard" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[
+                {lbl:"Inkomen",    val:fmt(monthIn), color:"#22c55e", icon:"\u{1F4C8}"},
+                {lbl:"Uitgaven",   val:fmt(monthUt), color:"#ef4444", icon:"\u{1F4C9}"},
+                {lbl:"Netto",      val:fmt(monthNt), color:monthNt>=0?"#60a5fa":"#f87171", icon:"\u2696\uFE0F"},
+                {lbl:"Spaarquote", val:spaar+"%",    color:spaar>=20?"#22c55e":spaar>=10?"#f59e0b":"#ef4444", icon:"\u{1F437}"},
+              ].map(k=>(
+                <div key={k.lbl} className="card" style={{padding:"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:10,color:"#334155",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px"}}>{k.lbl}</span>
+                    <span style={{fontSize:14}}>{k.icon}</span>
+                  </div>
+                  <div style={{fontSize:18,fontWeight:700,color:k.color,fontFamily:"'DM Serif Display',serif"}}>{k.val}</div>
+                  <div style={{fontSize:10,color:"#334155",marginTop:2}}>{monthLabel(fMonth)}</div>
+                </div>
+              ))}
+            </div>
+
+            {biggestExpense && (
+              <div style={{background:"linear-gradient(135deg,#0e0a28,#0d1627)",border:"1px solid #2d1b69",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:20}}>{"\u{1F3C6}"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,color:"#7c3aed",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px"}}>Grootste uitgave ooit</div>
+                  <div style={{fontSize:13,fontWeight:600,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{biggestExpense.description}</div>
+                  <div style={{fontSize:11,color:"#475569"}}>{getCat(biggestExpense.category).icon} {getCat(biggestExpense.category).label} {"\u00B7"} {fmtDate(biggestExpense.date)}</div>
+                </div>
+                <div style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'DM Serif Display',serif",flexShrink:0}}>{fmt(biggestExpense.amount)}</div>
+              </div>
+            )}
+
+            {pieData.length > 0 && (
+              <div className="card" style={{padding:"14px 16px"}}>
+                <h3 style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>Uitgaven per categorie</h3>
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                  <DonutChart data={pieData} />
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:4,overflowY:"auto",maxHeight:120}}>
+                    {[...pieData].sort((a,b)=>b.value-a.value).map(d=>(
+                      <div key={d.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:d.color,flexShrink:0,display:"inline-block"}}/>
+                          <span style={{fontSize:12,color:"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.icon} {d.name}</span>
+                        </div>
+                        <span style={{fontSize:12,fontWeight:600,flexShrink:0}}>{fmt(d.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="card" style={{padding:"14px 16px"}}>
+              <h3 style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>Trend - 6 maanden</h3>
+              <TrendChart data={trendData} />
+            </div>
+
+            <div className="card" style={{padding:"12px 0"}}>
+              <h3 style={{fontSize:11,fontWeight:700,color:"#334155",margin:"0 16px 10px",textTransform:"uppercase",letterSpacing:".5px"}}>Recente transacties</h3>
+              {[...tx].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5).map(t=>(
+                <div key={t.id} className="trow">
+                  <span style={{fontSize:16}}>{getCat(t.category).icon}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.description}</div>
+                    <div style={{fontSize:10,color:"#334155",marginTop:1}}>{fmtDate(t.date)}</div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:700,color:t.amount>0?"#22c55e":"#f87171",flexShrink:0}}>
+                    {t.amount>0?"+":""}{fmt(t.amount)}
+                  </span>
+                </div>
+              ))}
+              <button onClick={()=>setView("transacties")} style={{background:"none",border:"none",color:"#3b82f6",cursor:"pointer",fontSize:12,margin:"8px 16px 0",padding:0,fontFamily:"inherit"}}>
+                Alle transacties {"\u2192"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TRANSACTIES VIEW */}
+        {view==="transacties" && (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <div style={{flex:1,minWidth:140,position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:13,pointerEvents:"none"}}>{"\u{1F50D}"}</span>
+                <input className="fi" style={{paddingLeft:30}} placeholder="Zoeken..." value={search} onChange={e=>setSearch(e.target.value)}/>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                {[["date","Datum"],["amount","Bedrag"],["cat","Cat."]].map(([v,l])=>(
+                  <button key={v} className={"srt"+(sortBy===v?" on":"")} onClick={()=>setSortBy(v)}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {[
+                {lbl:"Gevonden", val:""+sorted.length, color:"#60a5fa"},
+                {lbl:"Inkomen",  val:fmt(sorted.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0)), color:"#22c55e"},
+                {lbl:"Uitgaven", val:fmt(sorted.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0)), color:"#f87171"},
+              ].map(s=>(
+                <div key={s.lbl} style={{background:"#0d1627",border:"1px solid #1a2744",borderRadius:8,padding:"5px 10px"}}>
+                  <span style={{fontSize:10,color:"#334155"}}>{s.lbl}: </span>
+                  <span style={{fontSize:12,fontWeight:600,color:s.color}}>{s.val}</span>
+                </div>
+              ))}
+            </div>
+            <div className="card" style={{padding:"4px 0"}}>
+              {sorted.length
+                ? sorted.map(t=><TRow key={t.id} t={t} cat={getCat(t.category)} onEdit={startEdit} onDelete={setDelConf}/>)
+                : <p style={{padding:"24px 16px",color:"#334155",textAlign:"center",fontSize:13}}>Geen transacties gevonden.</p>
+              }
+            </div>
+          </div>
+        )}
+
+        {/* TOEVOEGEN VIEW */}
+        {view==="toevoegen" && (
+          <div style={{maxWidth:440,margin:"0 auto"}}>
+            <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:20,fontWeight:400,marginBottom:14}}>
+              {editId?"Bewerken":"Transactie toevoegen"}
+            </h2>
+            <div className="card" style={{padding:18,display:"flex",flexDirection:"column",gap:13}}>
+              <div>
+                <label style={LS}>Type</label>
+                <div className="toggle">
+                  {[["uitgave","Uitgave"],["inkomen","Inkomen"]].map(([v,l])=>(
+                    <button key={v} className={"tgl"+(form.type===v?" on":"")}
+                      onClick={()=>{
+                        const newCat = v==="inkomen" ? (incomeCats[0]?.id||"inkomen") : (expenseCats[0]?.id||"overig");
+                        setForm(f=>({...f,type:v,category:newCat}));
+                      }}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={LS}>Datum</label>
+                  <input type="date" className="fi" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{colorScheme:"dark"}}/>
+                </div>
+                <div>
+                  <label style={LS}>Bedrag (&euro;)</label>
+                  <input className="fi" placeholder="0,00" type="number" min="0" step="0.01" inputMode="decimal" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+                </div>
+              </div>
+              <div>
+                <label style={LS}>Omschrijving</label>
+                <input className="fi" placeholder="bv. Colruyt boodschappen" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}/>
+              </div>
+              <div>
+                <label style={LS}>Categorie</label>
+                <select className="fi" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+                  {formCats.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+                </select>
+              </div>
+              <button className="submit" onClick={handleSubmit}>{editId?"Wijzigingen opslaan":"Toevoegen"}</button>
+              {editId && (
+                <button onClick={()=>{setEditId(null);setForm(blankForm());}} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:13,fontFamily:"inherit",textAlign:"center",padding:8}}>
+                  Annuleren
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* BUDGETTEN VIEW */}
+        {view==="budgetten" && (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div>
+              <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:20,fontWeight:400}}>Budgetten</h2>
+              <p style={{fontSize:12,color:"#334155",marginTop:2}}>{monthLabel(fMonth||currentMonth)}</p>
+            </div>
+            {budgetRows.map(c=>(
+              <div key={c.id} className="card" style={{padding:"12px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:18}}>{c.icon}</span>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600}}>{c.label}</div>
+                      <div style={{fontSize:11,color:"#475569",marginTop:1}}>
+                        <span style={{color:c.over?"#f87171":"#94a3b8"}}>{fmt(c.spent)}</span>
+                        <span style={{color:"#1a2744"}}> / {fmt(c.budget)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {c.over && <span className="tag" style={{background:"#7f1d1d22",color:"#ef4444",border:"1px solid #7f1d1d44",fontSize:10}}>Over</span>}
+                    <span style={{fontSize:14,fontWeight:700,color:c.over?"#ef4444":c.pct>80?"#f59e0b":"#22c55e"}}>{c.pct}%</span>
+                    <button className="rb" onClick={()=>openEditCat(c)}>&#9998;</button>
+                  </div>
+                </div>
+                <div className="prbar">
+                  <div style={{height:"100%",width:c.pct+"%",borderRadius:4,transition:"width .5s",background:c.over?"linear-gradient(90deg,#ef4444,#dc2626)":c.pct>80?"#f59e0b":c.color}}/>
+                </div>
+              </div>
+            ))}
+            {budgetRows.length===0 && <p style={{color:"#334155",fontSize:13,textAlign:"center",padding:30}}>Geen uitgaven in deze periode.</p>}
+            {budgetRows.length>0 && (
+              <div style={{background:"linear-gradient(135deg,#0a1428,#0d1627)",border:"1px solid #1e3a5f",borderRadius:12,padding:"14px 16px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                {[
+                  {lbl:"Budget",     val:fmt(budgetRows.reduce((s,c)=>s+c.budget,0)),        color:"#60a5fa"},
+                  {lbl:"Uitgegeven", val:fmt(budgetRows.reduce((s,c)=>s+c.spent,0)),          color:"#f87171"},
+                  {lbl:"Resterend",  val:fmt(budgetRows.reduce((s,c)=>s+c.budget-c.spent,0)), color:"#34d399"},
+                ].map(s=>(
+                  <div key={s.lbl} style={{textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"#334155",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:3}}>{s.lbl}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:s.color,fontFamily:"'DM Serif Display',serif"}}>{s.val}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* CATEGORIEEN VIEW */}
+        {view==="categorieen" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:20,fontWeight:400}}>Categorie\u00EBn</h2>
+              <button onClick={openAddCat} style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)",border:"none",borderRadius:9,color:"#fff",cursor:"pointer",padding:"9px 16px",fontSize:13,fontWeight:600,fontFamily:"inherit",minHeight:40}}>
+                + Nieuw
+              </button>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#334155",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Uitgaven</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {expenseCats.map(c=>(
+                  <div key={c.id} className="card" style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20}}>{c.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600}}>{c.label}</div>
+                      <div style={{fontSize:11,color:"#475569",marginTop:1}}>Budget: {fmt(c.budget)} / maand</div>
+                    </div>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:c.color,flexShrink:0}}/>
+                    <button className="rb" onClick={()=>openEditCat(c)}>&#9998;</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#334155",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Inkomen</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {incomeCats.map(c=>(
+                  <div key={c.id} className="card" style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20}}>{c.icon}</span>
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.label}</div></div>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:c.color,flexShrink:0}}/>
+                    <button className="rb" onClick={()=>openEditCat(c)}>&#9998;</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* BOTTOM NAVIGATION */}
+      <div className="bottom-nav">
+        {[
+          {id:"dashboard",   icon:"\u{1F4CA}", label:"Home"},
+          {id:"transacties", icon:"\u{1F4CB}", label:"Lijst"},
+        ].map(tab=>(
+          <button key={tab.id} className={"nav-btn"+(view===tab.id?" act":"")} onClick={()=>goView(tab.id)}>
+            <span className="ni">{tab.icon}</span>
+            <span className="nl">{tab.label}</span>
+          </button>
+        ))}
+        <button className="add-nav" onClick={()=>goView("toevoegen")}>+</button>
+        {[
+          {id:"budgetten",   icon:"\u{1F3AF}", label:"Budget"},
+          {id:"categorieen", icon:"\u{1F3F7}\uFE0F", label:"Cat."},
+        ].map(tab=>(
+          <button key={tab.id} className={"nav-btn"+(view===tab.id?" act":"")} onClick={()=>goView(tab.id)}>
+            <span className="ni">{tab.icon}</span>
+            <span className="nl">{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+/* ── Render ── */
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
