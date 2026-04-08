@@ -1291,6 +1291,26 @@ async function hashPin(pin) {
 }
 
 function checkPin() {
+  // Thin client ondersteuning: apparaatnaam via URL-parameter instellen (?device=Naam)
+  // Zo hoeven thin client gebruikers enkel de PIN in te voeren, niet telkens de naam.
+  var urlDevice = new URLSearchParams(window.location.search).get("device");
+  if (urlDevice) {
+    urlDevice = urlDevice.trim();
+    safeSet("ekast-device", urlDevice);
+    if (!safeGet("ekast-device-id", null)) {
+      // Consistente device-ID afleiden van de naam zodat logs kloppen
+      var h = urlDevice.split("").reduce(function(a, c) { return ((a << 5) + a + c.charCodeAt(0)) | 0; }, 5381);
+      safeSet("ekast-device-id", (Math.abs(h) % 1679616).toString(36).toUpperCase().padStart(4, "0").slice(-4));
+    }
+    var lastUnlock = parseInt(safeGet("ekast-unlock", "0"), 10);
+    if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) {
+      init();
+    } else {
+      showPinEnter();
+    }
+    return;
+  }
+
   var device = safeGet("ekast-device", null);
   if (!device) {
     showPinSetup();
