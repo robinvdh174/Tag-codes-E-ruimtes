@@ -6,6 +6,9 @@ var SPREADSHEET_ID = "1TZ18nMFeALPOjioHmFnaHFaTWqeRkupZcXbqEygzH5w";
 var SHEET_NAME = "Kasten";
 var HEADERS = ["id", "code", "location", "note", "position", "status", "added", "addedby", "statusBy", "statusDate"];
 
+// Hernoem verouderde locatienamen bij het ophalen uit de sheet
+var LOCATION_RENAMES = { "Omvormerruimte": "OMVR B.", "Walsen Loods": "W.L. Oud" };
+
 // Vertaling status: app-waarde → leesbare naam voor de sheet
 function statusNaarSheet(val) {
   if (val === "ok")           return "Veiliggesteld";
@@ -73,7 +76,9 @@ function handleGet() {
     for (var j = 0; j < headers.length; j++) {
       var key = headers[j];
       var val = cellToString(rows[i][j]);
-      obj[key] = (key === "status") ? statusVanSheet(val) : val;
+      if (key === "status") obj[key] = statusVanSheet(val);
+      else if (key === "location") obj[key] = LOCATION_RENAMES[val] || val;
+      else obj[key] = val;
     }
     if (obj.id) result.push(obj);
   }
@@ -312,6 +317,25 @@ function testAddRoom() {
 function testGetRooms() {
   var r = handleGetRooms();
   Logger.log("testGetRooms: " + JSON.stringify(r));
+}
+
+// Eenmalig uitvoeren vanuit Apps Script editor om locatienamen in de sheet te corrigeren
+function migreerLocatieNamen() {
+  var sheet = getOrCreateSheet();
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) { Logger.log("Sheet leeg"); return; }
+  var headers = rows[0];
+  var locCol = headers.indexOf("location");
+  if (locCol === -1) { Logger.log("Kolom 'location' niet gevonden"); return; }
+  var count = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var val = String(rows[i][locCol]);
+    if (LOCATION_RENAMES[val]) {
+      sheet.getRange(i + 1, locCol + 1).setValue(LOCATION_RENAMES[val]);
+      count++;
+    }
+  }
+  Logger.log("migreerLocatieNamen: " + count + " rijen bijgewerkt");
 }
 
 function dedupliceerSheet() {
