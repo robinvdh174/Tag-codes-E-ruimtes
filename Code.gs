@@ -50,6 +50,11 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    // Token controle — voorkom ongeautoriseerde schrijfacties
+    var params = (e && e.parameter) ? e.parameter : {};
+    if (params.token !== "ekast-2025") {
+      return makeResponse({ error: "Ongeautoriseerd" });
+    }
     var raw = (e && e.postData) ? e.postData.contents : "";
     if (!raw) throw new Error("Geen data");
     var incoming = JSON.parse(raw);
@@ -276,86 +281,3 @@ function makeResponse(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ----------------------------------------------------------
-// Testfuncties (uitvoeren via Apps Script editor)
-// ----------------------------------------------------------
-function testGet() {
-  var r = handleGet();
-  Logger.log("testGet: " + r.length + " kasten");
-}
-
-function testAdd() {
-  var item = { id: "test_" + Date.now(), code: "TEST-ADD", location: "Testruimte", note: "testnotitie", position: "", status: "", added: "01-04-2026", addedby: "", statusBy: "", statusDate: "" };
-  var r = handleAdd(JSON.stringify(item));
-  Logger.log("testAdd: " + JSON.stringify(r));
-}
-
-function testDelete() {
-  var sheet = getOrCreateSheet();
-  var rows = sheet.getDataRange().getValues();
-  for (var i = rows.length - 1; i >= 1; i--) {
-    if (String(rows[i][1]).indexOf("TEST") === 0) {
-      var id = String(rows[i][0]);
-      Logger.log("testDelete: verwijder " + id);
-      handleDelete(id);
-      return;
-    }
-  }
-  Logger.log("testDelete: geen TEST rij gevonden");
-}
-
-function testLog() {
-  var r = handleLog({ logaction: "Toegevoegd", code: "TEST-LOG", location: "Testruimte", device: "GSM Test", sheet: "Logboek%20Toevoegingen" });
-  Logger.log("testLog: " + JSON.stringify(r));
-}
-
-function testAddRoom() {
-  var r = handleAddRoom("Testruimte%20Noord", "gelijkvloers%2C%20links%20van%20de%20ingang");
-  Logger.log("testAddRoom: " + JSON.stringify(r));
-}
-
-function testGetRooms() {
-  var r = handleGetRooms();
-  Logger.log("testGetRooms: " + JSON.stringify(r));
-}
-
-// Eenmalig uitvoeren vanuit Apps Script editor om locatienamen in de sheet te corrigeren
-function migreerLocatieNamen() {
-  var sheet = getOrCreateSheet();
-  var rows = sheet.getDataRange().getValues();
-  if (rows.length <= 1) { Logger.log("Sheet leeg"); return; }
-  var headers = rows[0];
-  var locCol = headers.indexOf("location");
-  if (locCol === -1) { Logger.log("Kolom 'location' niet gevonden"); return; }
-  var count = 0;
-  for (var i = 1; i < rows.length; i++) {
-    var val = String(rows[i][locCol]);
-    if (LOCATION_RENAMES[val]) {
-      sheet.getRange(i + 1, locCol + 1).setValue(LOCATION_RENAMES[val]);
-      count++;
-    }
-  }
-  Logger.log("migreerLocatieNamen: " + count + " rijen bijgewerkt");
-}
-
-function dedupliceerSheet() {
-  var sheet = getOrCreateSheet();
-  var rows = sheet.getDataRange().getValues();
-  if (rows.length <= 1) { Logger.log("Sheet leeg"); return; }
-  var headers = rows[0];
-  var idIndex = headers.indexOf("id");
-  var seen = {}, unieke = [headers], dubbels = 0;
-  for (var i = 1; i < rows.length; i++) {
-    var id = String(rows[i][idIndex]).trim();
-    if (!id || seen[id]) { dubbels++; continue; }
-    seen[id] = true;
-    unieke.push(rows[i]);
-  }
-  Logger.log(dubbels + " dubbels gevonden, " + (unieke.length - 1) + " uniek");
-  sheet.clearContents();
-  sheet.getRange(1, 1, unieke.length, headers.length).setValues(unieke);
-  var hr = sheet.getRange(1, 1, 1, headers.length);
-  hr.setFontWeight("bold"); hr.setBackground("#f0a500"); hr.setFontColor("#000000");
-  sheet.autoResizeColumns(1, headers.length);
-  Logger.log("Klaar: " + (unieke.length - 1) + " unieke kasten");
-}
