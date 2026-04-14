@@ -265,16 +265,10 @@ var ROOM_INFO = {
     <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="50"></div>
     <div class="form-group"><label>Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
-        <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" list="roomSuggestions" maxlength="50">
+        <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" maxlength="50">
         <button class="btn-room-pick" onclick="toggleRoomDropdown('newLocation','roomDrop1')" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
-      <datalist id="roomSuggestions">
-        <option value="Stofkisten Gang"><option value="OMVR B."><option value="3KV">
-        <option value="OR12"><option value="W.L. Oud"><option value="Lift 19">
-        <option value="DH"><option value="E-Ruimte 774-12"><option value="W.L. Nieuw">
-        <option value="CSBO"><option value="Lift 21"><option value="NICO-B"><option value="NICO-O">
-      </datalist>
     </div>
     <div class="form-group"><label>Positie in ruimte (optioneel)</label>
       <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off" maxlength="100">
@@ -292,7 +286,7 @@ var ROOM_INFO = {
     <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off" maxlength="50"></div>
     <div class="form-group"><label>Locatie</label>
       <div class="input-with-btn" style="position:relative;">
-        <input type="text" id="editLocation" autocomplete="off" list="roomSuggestions" maxlength="50">
+        <input type="text" id="editLocation" autocomplete="off" maxlength="50">
         <button class="btn-room-pick" onclick="toggleRoomDropdown('editLocation','roomDrop2')" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop2"></div>
       </div>
@@ -579,8 +573,6 @@ async function syncRooms() {
         stored[r.name] = r.desc || "";
         localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
       } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
-      var dl = document.getElementById("roomSuggestions");
-      if (dl) { var opt = document.createElement("option"); opt.value = r.name; dl.appendChild(opt); }
     });
   } catch(e) {
     console.warn("syncRooms mislukt:", e);
@@ -1240,8 +1232,6 @@ async function saveNewRoom() {
     stored[name] = desc;
     localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
   } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
-  var dl = document.getElementById("roomSuggestions");
-  if (dl) { var opt = document.createElement("option"); opt.value = name; dl.appendChild(opt); }
   closeAddRoomModal();
   showToast("Ruimte \"" + name + "\" toegevoegd.");
 
