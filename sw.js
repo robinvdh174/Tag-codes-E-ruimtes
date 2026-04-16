@@ -1,4 +1,4 @@
-var CACHE_NAME = "ekast-v6";
+var CACHE_NAME = "ekast-v7";
 var ASSETS = [
   "./index.html",
   "./manifest.json",
