@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
 <title>E-Kast Zoeker</title>
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="ekast-icon.svg">
@@ -394,6 +398,39 @@ var isSyncing = false;
 // kort terug op het scherm en gaan ze in races verloren.
 var _pendingIds = new Set();
 
+// Cryptografisch-veilige unieke ID. Math.random() heeft op druk gebruik
+// (meerdere devices binnen dezelfde ms) een reële collision-kans.
+function newId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Date.now() + "-" + Math.random().toString(36).slice(2, 11);
+}
+
+// Vandaag in canoniek ISO-formaat (YYYY-MM-DD). Voorkomt gemixte formats in
+// de sheet — toLocaleDateString("nl-NL") geeft "17-11-2025" of "17/11/2025"
+// afhankelijk van browser-locale, terwijl de server datums teruggeeft als ISO.
+function todayISO() {
+  var d = new Date();
+  return d.getFullYear() + "-" +
+         String(d.getMonth() + 1).padStart(2, "0") + "-" +
+         String(d.getDate()).padStart(2, "0");
+}
+
+// Case-insensitive lookup van een ruimte. Geeft de canonieke (correct
+// gespelde) naam terug uit ROOM_INFO, of null als de ruimte niet bestaat.
+// Voorkomt dat "omvr b." wordt geweigerd terwijl "OMVR B." wel werkt.
+function findRoom(name) {
+  if (!name) return null;
+  var target = String(name).trim().toLowerCase();
+  if (!target) return null;
+  var keys = Object.keys(ROOM_INFO);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].toLowerCase() === target) return keys[i];
+  }
+  return null;
+}
+
 // Veilige localStorage helpers (werkt ook in privémodus of bij vol geheugen)
 function safeGet(key, fallback) {
   try { var v = localStorage.getItem(key); return v !== null ? v : fallback; }
@@ -429,7 +466,15 @@ try {
   }
 })();
 
+// Debounced — bij snel achter elkaar muteren (bv. paar status-flips of
+// volledige sync) serialiseren we niet 5x dezelfde 500KB JSON-payload.
+var _saveTimer = null;
 function saveLocal() {
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(flushSave, 400);
+}
+function flushSave() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   try {
     localStorage.setItem("ekast-data", JSON.stringify(data));
   } catch(e) {
@@ -437,6 +482,9 @@ function saveLocal() {
     console.warn("saveLocal mislukt:", e);
   }
 }
+// Tab sluiten → pending save direct wegschrijven (anders kunnen wijzigingen
+// uit de laatste 400ms verloren gaan).
+window.addEventListener("pagehide", flushSave);
 
 // ============================================================
 // SYNC STATUS UI
@@ -634,6 +682,11 @@ async function init() {
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
       }
     });
+    // Sync zodra de tab weer zichtbaar wordt (bv. terug uit achtergrond op
+    // mobiel) — geeft snel verse data zonder op het 30s-interval te wachten.
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "visible" && SCRIPT_URL) syncFromSheets(true);
+    });
   }
 
   if (!SCRIPT_URL) {
@@ -648,7 +701,11 @@ async function init() {
 
   syncFromSheets(false);
   syncRooms();
-  syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
+  // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
+  // wanneer de app op de achtergrond staat of het scherm uit is.
+  syncTimer = setInterval(function() {
+    if (document.visibilityState === "visible") syncFromSheets(true);
+  }, SYNC_INTERVAL_MS);
 }
 
 function updateTotalCount() {
@@ -1169,17 +1226,18 @@ async function addEntry() {
   var note = document.getElementById("newNote").value.trim();
   var position = document.getElementById("newPosition").value.trim();
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO.hasOwnProperty(loc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  var canonicalLoc = findRoom(loc);
+  if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  loc = canonicalLoc;
 
-  var today = new Date().toLocaleDateString("nl-NL");
   var newItem = {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 9),
+    id: newId(),
     code: code,
     location: loc,
     position: position,
     note: note,
     status: "",
-    added: today,
+    added: todayISO(),
     addedby: safeGet("ekast-device", "")
   };
 
@@ -1241,7 +1299,9 @@ async function saveEdit() {
 
   var newLoc = document.getElementById("editLocation").value.trim();
   if (!newLoc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO.hasOwnProperty(newLoc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  var canonicalNewLoc = findRoom(newLoc);
+  if (!canonicalNewLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  newLoc = canonicalNewLoc;
 
   var updatedItem = Object.assign({}, data[idx], {
     code:     document.getElementById("editCode").value.trim(),
