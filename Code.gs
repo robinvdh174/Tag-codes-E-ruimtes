@@ -49,22 +49,10 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  try {
-    // Token controle — voorkom ongeautoriseerde schrijfacties
-    var params = (e && e.parameter) ? e.parameter : {};
-    if (params.token !== "ekast-2025") {
-      return makeResponse({ error: "Ongeautoriseerd" });
-    }
-    var raw = (e && e.postData) ? e.postData.contents : "";
-    if (!raw) throw new Error("Geen data");
-    var incoming = JSON.parse(raw);
-    if (!Array.isArray(incoming)) throw new Error("Verwacht array");
-    writeAllToSheet(incoming);
-    return makeResponse({ success: true, count: incoming.length });
-  } catch (err) {
-    Logger.log("doPost fout: " + err.message);
-    return makeResponse({ error: err.message });
-  }
+  // Bulk-overschrijven uitgeschakeld — de app gebruikt enkel de granulaire
+  // add/update/delete-acties via doGet. Laat staan om per ongeluk wissen
+  // van de hele sheet te voorkomen.
+  return makeResponse({ error: "POST disabled" });
 }
 
 // ----------------------------------------------------------
@@ -232,24 +220,6 @@ function cellToString(val) {
     return y + "-" + m + "-" + d;
   }
   return String(val || "");
-}
-
-function writeAllToSheet(incoming) {
-  var sheet = getOrCreateSheet();
-  sheet.clearContents();
-  sheet.appendRow(HEADERS);
-  var hr = sheet.getRange(1, 1, 1, HEADERS.length);
-  hr.setFontWeight("bold"); hr.setBackground("#f0a500"); hr.setFontColor("#000000");
-  if (incoming.length > 0) {
-    var rows = incoming.map(function(item) {
-      return HEADERS.map(function(h) {
-        return h === "status" ? statusNaarSheet(item[h] || "") : String(item[h] || "");
-      });
-    });
-    sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
-  }
-  sheet.autoResizeColumns(1, HEADERS.length);
-  Logger.log("Volledig herschreven: " + incoming.length + " rijen");
 }
 
 function getOrCreateSheet() {

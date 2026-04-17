@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
 <title>E-Kast Zoeker</title>
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="ekast-icon.svg">
@@ -389,6 +393,43 @@ var holdTimers = {};
 var HOLD_MS = 2000;
 var syncTimer = null;
 var isSyncing = false;
+// IDs van records met een schrijfactie in de lucht. De auto-sync mag deze
+// records NIET overschrijven met (oudere) serverdata, anders flippen wijzigingen
+// kort terug op het scherm en gaan ze in races verloren.
+var _pendingIds = new Set();
+
+// Cryptografisch-veilige unieke ID. Math.random() heeft op druk gebruik
+// (meerdere devices binnen dezelfde ms) een reële collision-kans.
+function newId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Date.now() + "-" + Math.random().toString(36).slice(2, 11);
+}
+
+// Vandaag in canoniek ISO-formaat (YYYY-MM-DD). Voorkomt gemixte formats in
+// de sheet — toLocaleDateString("nl-NL") geeft "17-11-2025" of "17/11/2025"
+// afhankelijk van browser-locale, terwijl de server datums teruggeeft als ISO.
+function todayISO() {
+  var d = new Date();
+  return d.getFullYear() + "-" +
+         String(d.getMonth() + 1).padStart(2, "0") + "-" +
+         String(d.getDate()).padStart(2, "0");
+}
+
+// Case-insensitive lookup van een ruimte. Geeft de canonieke (correct
+// gespelde) naam terug uit ROOM_INFO, of null als de ruimte niet bestaat.
+// Voorkomt dat "omvr b." wordt geweigerd terwijl "OMVR B." wel werkt.
+function findRoom(name) {
+  if (!name) return null;
+  var target = String(name).trim().toLowerCase();
+  if (!target) return null;
+  var keys = Object.keys(ROOM_INFO);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].toLowerCase() === target) return keys[i];
+  }
+  return null;
+}
 
 // Veilige localStorage helpers (werkt ook in privémodus of bij vol geheugen)
 function safeGet(key, fallback) {
@@ -425,7 +466,15 @@ try {
   }
 })();
 
+// Debounced — bij snel achter elkaar muteren (bv. paar status-flips of
+// volledige sync) serialiseren we niet 5x dezelfde 500KB JSON-payload.
+var _saveTimer = null;
 function saveLocal() {
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(flushSave, 400);
+}
+function flushSave() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   try {
     localStorage.setItem("ekast-data", JSON.stringify(data));
   } catch(e) {
@@ -433,6 +482,9 @@ function saveLocal() {
     console.warn("saveLocal mislukt:", e);
   }
 }
+// Tab sluiten → pending save direct wegschrijven (anders kunnen wijzigingen
+// uit de laatste 400ms verloren gaan).
+window.addEventListener("pagehide", flushSave);
 
 // ============================================================
 // SYNC STATUS UI
@@ -472,15 +524,24 @@ async function syncFromSheets(silent) {
       var json = await resp.json();
       if (json.error) throw new Error(json.error);
       if (Array.isArray(json) && json.length > 0) {
-        // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent
+        // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent.
+        // Records met pending writes worden NIET met serverdata overschreven.
         var localMap = {};
         data.forEach(function(d) { if (d.id) localMap[d.id] = d; });
         var merged = json.map(function(serverItem) {
           var local = localMap[serverItem.id];
+          if (local && _pendingIds.has(serverItem.id)) return local;
           if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
             return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
           }
           return serverItem;
+        });
+        // Lokale records die nog niet op de server staan maar wel pending zijn (bv. add in flight)
+        // niet verliezen: voeg ze achteraan toe.
+        var seen = {};
+        merged.forEach(function(it) { if (it && it.id) seen[it.id] = true; });
+        _pendingIds.forEach(function(pid) {
+          if (!seen[pid] && localMap[pid]) merged.push(localMap[pid]);
         });
         data = deduplicateById(merged);
         saveLocal();
@@ -488,7 +549,9 @@ async function syncFromSheets(silent) {
         var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
         setSyncStatus("ok", "Gesync " + now);
       } else if (Array.isArray(json) && json.length === 0) {
-        data = [];
+        // Server is leeg — behoud lokaal alleen records met een pending write,
+        // anders zou een add-in-flight verdwijnen.
+        data = data.filter(function(d) { return d.id && _pendingIds.has(d.id); });
         saveLocal();
         refreshUI();
         var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
@@ -619,6 +682,11 @@ async function init() {
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
       }
     });
+    // Sync zodra de tab weer zichtbaar wordt (bv. terug uit achtergrond op
+    // mobiel) — geeft snel verse data zonder op het 30s-interval te wachten.
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "visible" && SCRIPT_URL) syncFromSheets(true);
+    });
   }
 
   if (!SCRIPT_URL) {
@@ -633,7 +701,11 @@ async function init() {
 
   syncFromSheets(false);
   syncRooms();
-  syncTimer = setInterval(function() { syncFromSheets(true); }, SYNC_INTERVAL_MS);
+  // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
+  // wanneer de app op de achtergrond staat of het scherm uit is.
+  syncTimer = setInterval(function() {
+    if (document.visibilityState === "visible") syncFromSheets(true);
+  }, SYNC_INTERVAL_MS);
 }
 
 function updateTotalCount() {
@@ -691,14 +763,15 @@ function renderStatus() {
   var active = data.filter(function(d) { return d.status && d.status !== ""; });
   active.sort(function(a, b) { return (a.location||"").localeCompare(b.location||""); });
   document.getElementById("statusCount").innerText = active.length;
+  var container = document.getElementById("statusResults");
+  container.textContent = "";
   if (active.length === 0) {
-    document.getElementById("statusResults").innerHTML = "<div class=\"empty\"><b>Geen actieve meldingen</b>Alle kasten zijn in bedrijf</div>";
+    container.innerHTML = "<div class=\"empty\"><b>Geen actieve meldingen</b>Alle kasten zijn in bedrijf</div>";
     return;
   }
-  var html = "";
-  for (var i = 0; i < active.length; i++) html += makeCard(active[i]);
-  document.getElementById("statusResults").innerHTML = html;
-  attachHold();
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < active.length; i++) frag.appendChild(makeCard(active[i]));
+  container.appendChild(frag);
 }
 
 function updateStatusBadge() {
@@ -744,14 +817,14 @@ function _doSearchNow(value) {
     }
   }
   countEl.innerText = results.length;
+  container.textContent = "";
   if (results.length === 0) {
     container.innerHTML = "<div class=\"empty\"><b>Niets gevonden</b>Probeer een andere zoekterm</div>";
     return;
   }
-  var html = "";
-  for (var i = 0; i < results.length; i++) html += makeCard(results[i]);
-  container.innerHTML = html;
-  attachHold();
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < results.length; i++) frag.appendChild(makeCard(results[i]));
+  container.appendChild(frag);
 }
 
 // ============================================================
@@ -766,43 +839,161 @@ function esc(s) {
     .replace(/'/g, "&#39;");
 }
 
-function highlight(text, term) {
-  if (!term) return esc(text);
-  var escaped = esc(text);
-  var termEsc = esc(term);
-  var regex = new RegExp("(" + termEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
-  return escaped.replace(regex, "<mark style=\"background:#f0a500;color:#000;border-radius:2px;padding:0 1px;\">$1</mark>");
+// Voegt tekst toe aan `parent`, met zoekterm gemarkeerd via <mark>.
+// Veilig: gebruikt textContent/createElement — nooit innerHTML met user-data.
+function appendHighlighted(parent, text, term) {
+  var safeText = String(text == null ? "" : text);
+  if (!term) { parent.appendChild(document.createTextNode(safeText)); return; }
+  var termEsc = String(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var regex = new RegExp("(" + termEsc + ")", "gi");
+  var parts = safeText.split(regex);
+  // split() met capture-group: oneven indices zijn matches.
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] === "") continue;
+    if (i % 2 === 1) {
+      var mark = document.createElement("mark");
+      mark.style.cssText = "background:#f0a500;color:#000;border-radius:2px;padding:0 1px;";
+      mark.textContent = parts[i];
+      parent.appendChild(mark);
+    } else {
+      parent.appendChild(document.createTextNode(parts[i]));
+    }
+  }
 }
 
 var _currentSearchTerm = "";
 
+// Bouwt een kaart als DOM-element (geen innerHTML met user-data → XSS-vrij).
 function makeCard(item) {
-  var id = esc(item.id);
+  var id = String(item.id == null ? "" : item.id);
   var term = _currentSearchTerm;
-  var h = "<div class=\"card\" id=\"c-" + id + "\" onclick=\"selectCard(this)\">";
-  h += "<div class=\"card-top\"><div class=\"card-info\">";
-  h += "<div class=\"code\">" + highlight(item.code, term) + "</div>";
-  h += "<div style=\"display:flex;justify-content:space-between;align-items:flex-start;\">" +
-        "<div class=\"loc\">" + highlight(item.location, term) + (ROOM_INFO[item.location] ? " <button class=\"btn-info-loc\" onclick=\"event.stopPropagation();showRoomInfo(&#39;" + esc(item.location) + "&#39;)\" title=\"Waar is dit?\">&#9432;</button>" : "") + "</div>" +
-        "<div style=\"display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;\">" +
-        "<button class=\"sbtn-veilig" + (item.status==="ok"?" secured":item.status==="losgekoppeld"?" losgekoppeld":"") + "\" onclick=\"event.stopPropagation();openStatusKeuze(&#39;" + id + "&#39;)\">" +
-        (item.status==="ok" ? "&#9888; Veiliggesteld" : item.status==="losgekoppeld" ? "&#9888; Losgekoppeld" : "&#9889; In bedrijf") +
-        "</button>" +
-        (item.status && item.statusBy ? "<div class=\"status-meta\" style=\"text-align:right;\">" + esc(item.statusBy) + (item.statusDate ? " &bull; " + formatDatum(item.statusDate) : "") + "</div>" : "") +
-        "</div>" +
-        "</div>";
-  if (item.position) h += "<div class=\"pos\">&#128205; " + highlight(item.position, term) + "</div>";
-  if (item.note) h += "<div class=\"note\">&#128172; " + highlight(item.note, term) + "</div>";
-  h += "</div>";
-  h += "<button class=\"btn-pencil\" onclick=\"event.stopPropagation();toggleEdit(&#39;" + id + "&#39;)\">";
-  h += "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"/><path d=\"M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z\"/></svg>";
-  h += "</button></div>";
-  h += "<div class=\"edit-actions\" id=\"ea-" + id + "\">";
-  h += "<button class=\"btn-bewerk\" onclick=\"openEdit(&#39;" + id + "&#39;)\">&#9998; Gegevens bewerken</button>";
-  h += "<button class=\"btn-delete\" id=\"del-" + id + "\" data-id=\"" + id + "\"><div class=\"hold-bar\" id=\"bar-" + id + "\"></div><span>&#128465; Houd in om te verwijderen</span></button>";
-  h += "<div class=\"hold-hint\">2 seconden ingedrukt houden</div>";
-  h += "</div></div>";
-  return h;
+
+  var card = document.createElement("div");
+  card.className = "card";
+  card.id = "c-" + id;
+  card.addEventListener("click", function() { selectCard(card); });
+
+  var top = document.createElement("div");
+  top.className = "card-top";
+  var info = document.createElement("div");
+  info.className = "card-info";
+
+  var codeEl = document.createElement("div");
+  codeEl.className = "code";
+  appendHighlighted(codeEl, item.code, term);
+  info.appendChild(codeEl);
+
+  var row = document.createElement("div");
+  row.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;";
+
+  var loc = document.createElement("div");
+  loc.className = "loc";
+  appendHighlighted(loc, item.location, term);
+  if (item.location && ROOM_INFO[item.location]) {
+    loc.appendChild(document.createTextNode(" "));
+    var infoBtn = document.createElement("button");
+    infoBtn.className = "btn-info-loc";
+    infoBtn.type = "button";
+    infoBtn.title = "Waar is dit?";
+    infoBtn.textContent = "\u24D8"; // ⓘ
+    infoBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      showRoomInfo(item.location);
+    });
+    loc.appendChild(infoBtn);
+  }
+  row.appendChild(loc);
+
+  var statusWrap = document.createElement("div");
+  statusWrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;";
+
+  var statusBtn = document.createElement("button");
+  statusBtn.type = "button";
+  statusBtn.className = "sbtn-veilig" + (item.status === "ok" ? " secured" : item.status === "losgekoppeld" ? " losgekoppeld" : "");
+  statusBtn.textContent = item.status === "ok" ? "\u26A0 Veiliggesteld"
+                       : item.status === "losgekoppeld" ? "\u26A0 Losgekoppeld"
+                       : "\u26A1 In bedrijf";
+  statusBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    openStatusKeuze(id);
+  });
+  statusWrap.appendChild(statusBtn);
+
+  if (item.status && item.statusBy) {
+    var meta = document.createElement("div");
+    meta.className = "status-meta";
+    meta.style.textAlign = "right";
+    meta.textContent = item.statusBy + (item.statusDate ? " \u2022 " + formatDatum(item.statusDate) : "");
+    statusWrap.appendChild(meta);
+  }
+  row.appendChild(statusWrap);
+  info.appendChild(row);
+
+  if (item.position) {
+    var pos = document.createElement("div");
+    pos.className = "pos";
+    pos.appendChild(document.createTextNode("\uD83D\uDCCD ")); // 📍
+    appendHighlighted(pos, item.position, term);
+    info.appendChild(pos);
+  }
+  if (item.note) {
+    var note = document.createElement("div");
+    note.className = "note";
+    note.appendChild(document.createTextNode("\uD83D\uDCAC ")); // 💬
+    appendHighlighted(note, item.note, term);
+    info.appendChild(note);
+  }
+
+  top.appendChild(info);
+
+  var pencil = document.createElement("button");
+  pencil.type = "button";
+  pencil.className = "btn-pencil";
+  pencil.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  pencil.addEventListener("click", function(e) {
+    e.stopPropagation();
+    toggleEdit(id);
+  });
+  top.appendChild(pencil);
+
+  card.appendChild(top);
+
+  var editActions = document.createElement("div");
+  editActions.className = "edit-actions";
+  editActions.id = "ea-" + id;
+
+  var editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "btn-bewerk";
+  editBtn.textContent = "\u270E Gegevens bewerken";
+  editBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    openEdit(id);
+  });
+  editActions.appendChild(editBtn);
+
+  var deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn-delete";
+  deleteBtn.id = "del-" + id;
+  deleteBtn.setAttribute("data-id", id);
+  var bar = document.createElement("div");
+  bar.className = "hold-bar";
+  bar.id = "bar-" + id;
+  var delLabel = document.createElement("span");
+  delLabel.textContent = "\uD83D\uDDD1 Houd in om te verwijderen"; // 🗑
+  deleteBtn.appendChild(bar);
+  deleteBtn.appendChild(delLabel);
+  attachHoldListeners(deleteBtn, id);
+  editActions.appendChild(deleteBtn);
+
+  var hint = document.createElement("div");
+  hint.className = "hold-hint";
+  hint.textContent = "2 seconden ingedrukt houden";
+  editActions.appendChild(hint);
+
+  card.appendChild(editActions);
+  return card;
 }
 
 function selectCard(el) {
@@ -814,7 +1005,7 @@ function toggleEdit(id) {
   var el = document.getElementById("ea-" + id);
   if (!el) return;
   el.classList.toggle("open");
-  if (el.classList.contains("open")) attachHold();
+  // Listeners zijn al gehecht in makeCard — niets opnieuw te doen.
 }
 
 // ============================================================
@@ -957,15 +1148,18 @@ async function setStatus(id, newStatus, naam, datum) {
   saveLocal();
   refreshUI();
 
+  _pendingIds.add(id);
   try {
     await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     var now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
     var statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
     await logAction(statusLabel + (naam ? " \u2014 " + naam : ""), updatedItem.code, updatedItem.location, "Logboek Status");
+    _pendingIds.delete(id);
     await syncFromSheets(true);
   } catch(e) {
     // Server faalde — terugdraaien
+    _pendingIds.delete(id);
     data[idx] = previousItem;
     saveLocal();
     refreshUI();
@@ -984,14 +1178,24 @@ function renderList() {
     if (data[i].location && rooms.indexOf(data[i].location) === -1) rooms.push(data[i].location);
   }
   rooms.sort(function(a, b) { if (a==="all") return -1; if (b==="all") return 1; return a.localeCompare(b); });
-  var fh = "";
-  for (var i = 0; i < rooms.length; i++) {
-    var r = rooms[i];
-    var cnt = r === "all" ? data.length : data.filter(function(d){ return d.location===r; }).length;
-    fh += "<span class=\"chip" + (activeRoom===r?" active":"") + "\" onclick=\"setRoom(this,'" + esc(r).replace(/'/g,"\\&#39;") + "')\">" +
-          (r==="all" ? "Alle (" + cnt + ")" : esc(r) + " (" + cnt + ")") + "</span>";
+
+  // Tellingen vóór de loop berekenen om O(n*r) te vermijden.
+  var counts = {};
+  for (var i = 0; i < data.length; i++) {
+    var loc = data[i].location;
+    if (loc) counts[loc] = (counts[loc] || 0) + 1;
   }
-  document.getElementById("roomFilter").innerHTML = fh;
+
+  var filter = document.getElementById("roomFilter");
+  filter.textContent = "";
+  rooms.forEach(function(r) {
+    var cnt = r === "all" ? data.length : (counts[r] || 0);
+    var chip = document.createElement("span");
+    chip.className = "chip" + (activeRoom === r ? " active" : "");
+    chip.textContent = r === "all" ? ("Alle (" + cnt + ")") : (r + " (" + cnt + ")");
+    chip.addEventListener("click", function() { setRoom(chip, r); });
+    filter.appendChild(chip);
+  });
   showFiltered();
 }
 
@@ -1006,10 +1210,11 @@ function showFiltered() {
   _currentSearchTerm = "";
   var filtered = data.filter(function(d) { return activeRoom === "all" || d.location === activeRoom; });
   filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
-  var html = "";
-  for (var i = 0; i < filtered.length; i++) html += makeCard(filtered[i]);
-  document.getElementById("listResults").innerHTML = html;
-  attachHold();
+  var container = document.getElementById("listResults");
+  container.textContent = "";
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
+  container.appendChild(frag);
 }
 
 // ============================================================
@@ -1021,23 +1226,25 @@ async function addEntry() {
   var note = document.getElementById("newNote").value.trim();
   var position = document.getElementById("newPosition").value.trim();
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO.hasOwnProperty(loc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  var canonicalLoc = findRoom(loc);
+  if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  loc = canonicalLoc;
 
-  var today = new Date().toLocaleDateString("nl-NL");
   var newItem = {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 9),
+    id: newId(),
     code: code,
     location: loc,
     position: position,
     note: note,
     status: "",
-    added: today,
+    added: todayISO(),
     addedby: safeGet("ekast-device", "")
   };
 
   var btnAdd = document.getElementById("btnAdd");
   btnAdd.disabled = true; btnAdd.textContent = "OPSLAAN...";
   setSyncStatus("syncing", "Opslaan...");
+  _pendingIds.add(newItem.id);
   try {
     var result = await sheetAction({ action: "add", data: JSON.stringify(newItem) });
     if (!result) throw new Error("Geen antwoord van server");
@@ -1051,8 +1258,10 @@ async function addEntry() {
     refreshUI();
     await logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
     showToast("Kast toegevoegd!");
+    _pendingIds.delete(newItem.id);
     await syncFromSheets(true);
   } catch(e) {
+    _pendingIds.delete(newItem.id);
     setSyncStatus("error", "Fout: " + e.message);
     showToast("Fout bij opslaan: " + e.message, true);
     console.error("addEntry sync:", e);
@@ -1090,7 +1299,9 @@ async function saveEdit() {
 
   var newLoc = document.getElementById("editLocation").value.trim();
   if (!newLoc) { showToast("Vul een ruimte in!", true); return; }
-  if (!ROOM_INFO.hasOwnProperty(newLoc)) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  var canonicalNewLoc = findRoom(newLoc);
+  if (!canonicalNewLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
+  newLoc = canonicalNewLoc;
 
   var updatedItem = Object.assign({}, data[idx], {
     code:     document.getElementById("editCode").value.trim(),
@@ -1102,6 +1313,7 @@ async function saveEdit() {
   var btnSave = document.getElementById("btnSaveEdit");
   btnSave.disabled = true; btnSave.textContent = "Opslaan...";
   setSyncStatus("syncing", "Opslaan...");
+  _pendingIds.add(id);
   try {
     var result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     if (!result) throw new Error("Geen antwoord van server");
@@ -1111,8 +1323,10 @@ async function saveEdit() {
     saveLocal();
     refreshUI();
     showToast("Opgeslagen!");
+    _pendingIds.delete(id);
     await syncFromSheets(true);
   } catch(e) {
+    _pendingIds.delete(id);
     setSyncStatus("error", "Fout: " + e.message);
     showToast("Fout: " + e.message, true);
     console.error("saveEdit sync:", e);
@@ -1132,6 +1346,7 @@ async function deleteEntry(id) {
   if (idx === -1) return;
 
   setSyncStatus("syncing", "Verwijderen...");
+  _pendingIds.add(id);
   try {
     var result = await sheetAction({ action: "delete", id: id });
     if (!result) throw new Error("Geen antwoord van server");
@@ -1140,8 +1355,10 @@ async function deleteEntry(id) {
     saveLocal();
     refreshUI();
     showToast("Verwijderd");
+    _pendingIds.delete(id);
     await syncFromSheets(true);
   } catch(e) {
+    _pendingIds.delete(id);
     setSyncStatus("error", "Fout: " + e.message);
     showToast("Fout bij verwijderen: " + e.message, true);
     console.error("deleteEntry sync:", e);
@@ -1150,33 +1367,28 @@ async function deleteEntry(id) {
 
 // ============================================================
 // HOLD-TO-DELETE
+// Listeners worden nu één keer per knop in makeCard() gehecht;
+// geen globale rescan meer (geen markers, geen dubbele attach).
 // ============================================================
-function attachHold() {
-  var btns = document.querySelectorAll(".btn-delete");
-  for (var i = 0; i < btns.length; i++) {
-    (function(btn) {
-      if (btn._att) return; btn._att = true;
-      var id = btn.getAttribute("data-id");
-      function start(e) {
-        e.preventDefault(); btn.classList.add("holding");
-        var bar = document.getElementById("bar-" + id);
-        if (bar) { bar.style.transition = "width " + HOLD_MS + "ms linear"; bar.style.width = "100%"; }
-        holdTimers[id] = setTimeout(function() { deleteEntry(id); }, HOLD_MS);
-      }
-      function stop() {
-        btn.classList.remove("holding");
-        var bar = document.getElementById("bar-" + id);
-        if (bar) { bar.style.transition = "none"; bar.style.width = "0%"; }
-        if (holdTimers[id]) { clearTimeout(holdTimers[id]); delete holdTimers[id]; }
-      }
-      btn.addEventListener("mousedown", start);
-      btn.addEventListener("touchstart", start, {passive:false});
-      btn.addEventListener("mouseup", stop);
-      btn.addEventListener("mouseleave", stop);
-      btn.addEventListener("touchend", stop);
-      btn.addEventListener("touchcancel", stop);
-    })(btns[i]);
+function attachHoldListeners(btn, id) {
+  var bar = btn.querySelector(".hold-bar");
+  function start(e) {
+    e.preventDefault();
+    btn.classList.add("holding");
+    if (bar) { bar.style.transition = "width " + HOLD_MS + "ms linear"; bar.style.width = "100%"; }
+    holdTimers[id] = setTimeout(function() { deleteEntry(id); }, HOLD_MS);
   }
+  function stop() {
+    btn.classList.remove("holding");
+    if (bar) { bar.style.transition = "none"; bar.style.width = "0%"; }
+    if (holdTimers[id]) { clearTimeout(holdTimers[id]); delete holdTimers[id]; }
+  }
+  btn.addEventListener("mousedown", start);
+  btn.addEventListener("touchstart", start, {passive: false});
+  btn.addEventListener("mouseup", stop);
+  btn.addEventListener("mouseleave", stop);
+  btn.addEventListener("touchend", stop);
+  btn.addEventListener("touchcancel", stop);
 }
 
 // ============================================================
@@ -1428,7 +1640,10 @@ function unlockApp() {
   if (document.activeElement) document.activeElement.blur();
   document.getElementById("pinOverlay").classList.remove("open");
   init();
-  // Verleng sessie bij activiteit
+  // Verleng sessie bij activiteit — slechts één keer hechten, anders accumuleren
+  // listeners bij elke unlock (memory leak + verspilde calls per click).
+  if (unlockApp._activityBound) return;
+  unlockApp._activityBound = true;
   ["click", "touchstart", "keydown"].forEach(function(evt) {
     document.addEventListener(evt, function() {
       safeSet("ekast-unlock", Date.now().toString());
