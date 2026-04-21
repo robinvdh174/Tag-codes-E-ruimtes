@@ -153,6 +153,135 @@ function flushSave() {
 window.addEventListener("pagehide", flushSave);
 
 // ============================================================
+// OFFLINE QUEUE — slaat mislukte schrijfacties op en herprobeert
+// ze zodra de server weer bereikbaar is.
+// ============================================================
+const QUEUE_KEY = "ekast-pending-queue";
+
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); }
+  catch(e) { return []; }
+}
+
+function saveQueue(queue) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); }
+  catch(e) { console.warn("Queue opslaan mislukt:", e); }
+}
+
+function enqueue(action, itemData) {
+  const queue = getQueue();
+  const itemId = itemData.id;
+  if (action === "delete") {
+    const addIdx = queue.findIndex(function(q) { return q.action === "add" && q.data.id === itemId; });
+    if (addIdx !== -1) {
+      queue.splice(addIdx, 1);
+      saveQueue(queue);
+      updatePendingBadge();
+      return;
+    }
+  }
+  if (action === "update") {
+    const existIdx = queue.findIndex(function(q) { return q.action === "update" && q.data.id === itemId; });
+    if (existIdx !== -1) {
+      queue[existIdx].data = itemData;
+      queue[existIdx].timestamp = Date.now();
+      saveQueue(queue);
+      return;
+    }
+  }
+  queue.push({
+    queueId: newId(),
+    action: action,
+    data: itemData,
+    timestamp: Date.now(),
+    retries: 0
+  });
+  saveQueue(queue);
+  updatePendingBadge();
+}
+
+function dequeue(queueId) {
+  const queue = getQueue().filter(function(q) { return q.queueId !== queueId; });
+  saveQueue(queue);
+  updatePendingBadge();
+}
+
+function getQueueLength() {
+  return getQueue().length;
+}
+
+function getPendingIds() {
+  const ids = new Set();
+  getQueue().forEach(function(q) { if (q.data && q.data.id) ids.add(q.data.id); });
+  return ids;
+}
+
+function updatePendingBadge() {
+  const n = getQueueLength();
+  const badge = document.getElementById("syncBadge");
+  const lbl = document.getElementById("syncLabel");
+  if (!badge || !lbl) return;
+  if (n > 0 && !isSyncing) {
+    badge.className = "sync-badge offline";
+    lbl.textContent = n + " wachtend";
+  }
+}
+
+let _isProcessingQueue = false;
+async function processQueue() {
+  if (_isProcessingQueue || !SCRIPT_URL) return;
+  const queue = getQueue();
+  if (queue.length === 0) return;
+  _isProcessingQueue = true;
+  for (let i = 0; i < queue.length; i++) {
+    const entry = queue[i];
+    try {
+      if (entry.action === "add") {
+        const addResult = await sheetAction({ action: "add", data: JSON.stringify(entry.data) });
+        if (addResult && addResult.lastModified) {
+          const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
+          if (ix !== -1) { data[ix].lastModified = addResult.lastModified; saveLocal(); }
+        }
+      } else if (entry.action === "update") {
+        const updResult = await sheetAction({ action: "update", data: JSON.stringify(entry.data) });
+        if (updResult && updResult.conflict) {
+          dequeue(entry.queueId);
+          await handleConflictResult(updResult, entry.data);
+          break;
+        }
+        if (updResult && updResult.lastModified) {
+          const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
+          if (ix !== -1) { data[ix].lastModified = updResult.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
+        }
+      } else if (entry.action === "delete") {
+        await sheetAction({ action: "delete", id: entry.data.id });
+      }
+      dequeue(entry.queueId);
+      if (entry.action === "add") {
+        await logAction("Toegevoegd", entry.data.code, entry.data.location, "Logboek Toevoegingen");
+      }
+    } catch(e) {
+      entry.retries = (entry.retries || 0) + 1;
+      if (entry.retries > 10) {
+        dequeue(entry.queueId);
+        showToast("Sync definitief mislukt: " + entry.action + " " + (entry.data.code || entry.data.id), true);
+      } else {
+        saveQueue(getQueue().map(function(q) {
+          return q.queueId === entry.queueId ? entry : q;
+        }));
+      }
+      break;
+    }
+  }
+  _isProcessingQueue = false;
+  updatePendingBadge();
+  if (getQueueLength() === 0) {
+    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
+  }
+}
+
+// ============================================================
 // SYNC STATUS UI
 // ============================================================
 function setSyncStatus(state, label) {
@@ -283,7 +412,7 @@ async function sheetAction(params) {
 // Handmatige sync via klik op badge
 function manualSync() {
   if (!SCRIPT_URL) { showToast("Geen SCRIPT_URL ingesteld!", true); return; }
-  syncFromSheets(false);
+  processQueue().then(function() { syncFromSheets(false); });
 }
 
 // ============================================================
@@ -337,7 +466,7 @@ async function init() {
     });
     window.addEventListener("online", function() {
       setSyncStatus("syncing", "Verbinding hersteld...");
-      syncFromSheets(false);
+      processQueue().then(function() { syncFromSheets(false); });
     });
     document.addEventListener("keydown", function(e) {
       if (e.key === "Escape") {
@@ -351,7 +480,9 @@ async function init() {
     // Sync zodra de tab weer zichtbaar wordt (bv. terug uit achtergrond op
     // mobiel) — geeft snel verse data zonder op het 30s-interval te wachten.
     document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === "visible" && SCRIPT_URL) syncFromSheets(true);
+      if (document.visibilityState === "visible" && SCRIPT_URL) {
+        processQueue().then(function() { syncFromSheets(true); });
+      }
     });
   }
 
@@ -365,7 +496,8 @@ async function init() {
   // Voorkom meerdere sync-timers bij herinitialisatie
   if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
 
-  syncFromSheets(false);
+  updatePendingBadge();
+  processQueue().then(function() { syncFromSheets(false); });
   syncRooms();
   // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
   // wanneer de app op de achtergrond staat of het scherm uit is.
@@ -807,7 +939,9 @@ async function setStatus(id, newStatus, naam, datum) {
     statusUpdate.statusBy = naam || "";
     statusUpdate.statusDate = datum || "";
   }
-  const updatedItem = Object.assign({}, data[idx], statusUpdate);
+  const updatedItem = Object.assign({}, data[idx], statusUpdate, {
+    expectedLastModified: data[idx].lastModified || ""
+  });
 
   // UI meteen updaten — geen wachten op server
   data[idx] = updatedItem;
@@ -816,19 +950,25 @@ async function setStatus(id, newStatus, naam, datum) {
 
   _pendingIds.add(id);
   try {
-    await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
+    const result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
+    if (result && result.conflict) {
+      _pendingIds.delete(id);
+      await handleConflictResult(result, updatedItem);
+      return;
+    }
+    if (result && result.lastModified) {
+      const ix = data.findIndex(function(d) { return d.id === id; });
+      if (ix !== -1) { data[ix].lastModified = result.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
+    }
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
-    let statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
+    const statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
     await logAction(statusLabel + (naam ? " \u2014 " + naam : ""), updatedItem.code, updatedItem.location, "Logboek Status");
     _pendingIds.delete(id);
   } catch(e) {
     _pendingIds.delete(id);
-    data[idx] = previousItem;
-    saveLocal();
-    refreshUI();
-    setSyncStatus("error", "Sync fout");
-    showToast("Status niet opgeslagen: " + e.message, true);
+    enqueue("update", updatedItem);
+    showToast("Offline opgeslagen \u2014 wordt gesynchroniseerd zodra er verbinding is.");
     console.warn("setStatus sync:", e);
   }
 }
@@ -905,6 +1045,15 @@ async function addEntry() {
     addedby: safeGet("ekast-device", "")
   };
 
+  // Optimistic: meteen lokaal opslaan en UI updaten
+  data.push(newItem);
+  saveLocal();
+  document.getElementById("newCode").value = "";
+  document.getElementById("newLocation").value = "";
+  document.getElementById("newPosition").value = "";
+  document.getElementById("newNote").value = "";
+  refreshUI();
+
   const btnAdd = document.getElementById("btnAdd");
   btnAdd.disabled = true; btnAdd.textContent = "OPSLAAN...";
   setSyncStatus("syncing", "Opslaan...");
@@ -913,21 +1062,20 @@ async function addEntry() {
     const result = await sheetAction({ action: "add", data: JSON.stringify(newItem) });
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
-    document.getElementById("newCode").value = "";
-    document.getElementById("newLocation").value = "";
-    document.getElementById("newPosition").value = "";
-    document.getElementById("newNote").value = "";
-    data.push(newItem);
-    saveLocal();
-    refreshUI();
+    if (result.lastModified) {
+      const ix = data.findIndex(function(d) { return d.id === newItem.id; });
+      if (ix !== -1) { data[ix].lastModified = result.lastModified; saveLocal(); }
+    }
     await logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
     showToast("Kast toegevoegd!");
     _pendingIds.delete(newItem.id);
+    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
   } catch(e) {
     _pendingIds.delete(newItem.id);
-    setSyncStatus("error", "Fout: " + e.message);
-    showToast("Fout bij opslaan: " + e.message, true);
-    console.error("addEntry sync:", e);
+    enqueue("add", newItem);
+    showToast("Lokaal opgeslagen — wordt gesynchroniseerd zodra er verbinding is.");
+    console.warn("addEntry offline:", e);
   } finally {
     btnAdd.disabled = false; btnAdd.textContent = "OPSLAAN";
   }
@@ -970,8 +1118,15 @@ async function saveEdit() {
     code:     document.getElementById("editCode").value.trim(),
     location: newLoc,
     position: document.getElementById("editPosition").value.trim(),
-    note:     document.getElementById("editNote").value.trim()
+    note:     document.getElementById("editNote").value.trim(),
+    expectedLastModified: data[idx].lastModified || ""
   });
+
+  // Optimistic: meteen lokaal opslaan en UI updaten
+  closeModal();
+  data[idx] = updatedItem;
+  saveLocal();
+  refreshUI();
 
   const btnSave = document.getElementById("btnSaveEdit");
   btnSave.disabled = true; btnSave.textContent = "Opslaan...";
@@ -980,18 +1135,25 @@ async function saveEdit() {
   try {
     const result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
     if (!result) throw new Error("Geen antwoord van server");
+    if (result.conflict) {
+      _pendingIds.delete(id);
+      await handleConflictResult(result, updatedItem);
+      return;
+    }
     if (result.error) throw new Error(result.error);
-    closeModal();
-    data[idx] = updatedItem;
-    saveLocal();
-    refreshUI();
+    if (result.lastModified) {
+      const ix = data.findIndex(function(d) { return d.id === id; });
+      if (ix !== -1) { data[ix].lastModified = result.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
+    }
     showToast("Opgeslagen!");
     _pendingIds.delete(id);
+    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
   } catch(e) {
     _pendingIds.delete(id);
-    setSyncStatus("error", "Fout: " + e.message);
-    showToast("Fout: " + e.message, true);
-    console.error("saveEdit sync:", e);
+    enqueue("update", updatedItem);
+    showToast("Lokaal opgeslagen — sync wacht op verbinding.");
+    console.warn("saveEdit offline:", e);
   } finally {
     btnSave.disabled = false; btnSave.textContent = "Opslaan";
   }
@@ -1001,11 +1163,17 @@ async function saveEdit() {
 // VERWIJDEREN
 // ============================================================
 async function deleteEntry(id) {
-  let idx = -1, delCode = "", delLoc = "";
+  let idx = -1;
   for (let i = 0; i < data.length; i++) {
-    if (data[i].id === id) { idx = i; delCode = data[i].code; delLoc = data[i].location; break; }
+    if (data[i].id === id) { idx = i; break; }
   }
   if (idx === -1) return;
+
+  // Optimistic: meteen lokaal verwijderen
+  const removedItem = data.splice(idx, 1)[0];
+  saveLocal();
+  refreshUI();
+  showToast("Verwijderd");
 
   setSyncStatus("syncing", "Verwijderen...");
   _pendingIds.add(id);
@@ -1013,16 +1181,13 @@ async function deleteEntry(id) {
     const result = await sheetAction({ action: "delete", id: id });
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
-    data.splice(idx, 1);
-    saveLocal();
-    refreshUI();
-    showToast("Verwijderd");
     _pendingIds.delete(id);
+    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+    setSyncStatus("ok", "Gesync " + now);
   } catch(e) {
     _pendingIds.delete(id);
-    setSyncStatus("error", "Fout: " + e.message);
-    showToast("Fout bij verwijderen: " + e.message, true);
-    console.error("deleteEntry sync:", e);
+    enqueue("delete", { id: id, code: removedItem.code });
+    console.warn("deleteEntry offline:", e);
   }
 }
 
@@ -1163,6 +1328,74 @@ async function logAction(action, code, location, sheet) {
   } catch(e) {
     console.warn("Log fout:", e);
   }
+}
+
+// ============================================================
+// CONFLICT AFHANDELING
+// ============================================================
+let _conflictResolve = null;
+let _conflictLocalItem = null;
+let _conflictServerItem = null;
+
+function showConflictDialog(localItem, serverItem) {
+  _conflictLocalItem = localItem;
+  _conflictServerItem = serverItem;
+  const body = document.getElementById("conflictBody");
+  body.textContent = "";
+  const fields = [
+    { label: "Code", key: "code" },
+    { label: "Locatie", key: "location" },
+    { label: "Status", key: "status" },
+    { label: "Notitie", key: "note" },
+    { label: "Positie", key: "position" }
+  ];
+  fields.forEach(function(f) {
+    const lv = localItem[f.key] || "";
+    const sv = serverItem[f.key] || "";
+    if (lv !== sv) {
+      const row = document.createElement("div");
+      row.style.cssText = "margin-bottom:.4rem;padding:.3rem .5rem;background:#1c2030;border-radius:6px;";
+      row.innerHTML = "<b style='color:var(--accent)'>" + esc(f.label) + ":</b><br>" +
+        "<span style='color:#e03c3c'>Jij: " + esc(lv || "(leeg)") + "</span><br>" +
+        "<span style='color:#2ecc71'>Server: " + esc(sv || "(leeg)") + "</span>";
+      body.appendChild(row);
+    }
+  });
+  if (body.children.length === 0) {
+    body.textContent = "Alleen metadata verschilt (bijv. tijdstempel).";
+  }
+  document.getElementById("conflictOverlay").classList.add("open");
+  return new Promise(function(resolve) { _conflictResolve = resolve; });
+}
+
+function resolveConflict(choice) {
+  document.getElementById("conflictOverlay").classList.remove("open");
+  if (_conflictResolve) {
+    _conflictResolve({ choice: choice, localItem: _conflictLocalItem, serverItem: _conflictServerItem });
+    _conflictResolve = null;
+  }
+}
+
+async function handleConflictResult(result, localItem) {
+  if (!result.conflict) return false;
+  const resolution = await showConflictDialog(localItem, result.serverItem);
+  if (resolution.choice === "server") {
+    const idx = data.findIndex(function(d) { return d.id === localItem.id; });
+    if (idx !== -1) {
+      data[idx] = result.serverItem;
+      saveLocal();
+      refreshUI();
+    }
+    showToast("Server versie overgenomen.");
+  } else {
+    delete localItem.expectedLastModified;
+    localItem.lastModified = result.serverItem.lastModified;
+    await sheetAction({ action: "update", data: JSON.stringify(localItem) });
+    const idx = data.findIndex(function(d) { return d.id === localItem.id; });
+    if (idx !== -1) { data[idx] = localItem; saveLocal(); refreshUI(); }
+    showToast("Jouw versie opgeslagen.");
+  }
+  return true;
 }
 
 // ============================================================

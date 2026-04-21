@@ -201,6 +201,15 @@
   </div>
 </div>
 <div class="pin-overlay" id="pinOverlay"></div>
+<div class="status-popup" id="conflictOverlay">
+  <div class="status-popup-card" onclick="event.stopPropagation()" style="max-width:340px;">
+    <div class="status-popup-title" style="color:#f39c12;font-size:.85rem;">&#9888; Conflict gedetecteerd</div>
+    <p style="font-size:.82rem;color:var(--text);margin:.4rem 0 .6rem;line-height:1.5;">Dit record is ondertussen door een ander toestel gewijzigd.</p>
+    <div id="conflictBody" style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem;max-height:200px;overflow-y:auto;"></div>
+    <button class="status-btn-keuze status-btn-veilig" onclick="resolveConflict('mine')" style="margin-bottom:.5rem;">Mijn versie bewaren</button>
+    <button class="status-btn-keuze" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);" onclick="resolveConflict('server')">Server versie overnemen</button>
+  </div>
+</div>
 
 <!-- ==================== EMBEDDED DATA (fallback) ==================== -->
 <script id="d" type="application/json">
