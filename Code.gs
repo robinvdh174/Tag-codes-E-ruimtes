@@ -4,7 +4,7 @@
 
 var SPREADSHEET_ID = "1TZ18nMFeALPOjioHmFnaHFaTWqeRkupZcXbqEygzH5w";
 var SHEET_NAME = "Kasten";
-var HEADERS = ["id", "code", "location", "note", "position", "status", "added", "addedby", "statusBy", "statusDate"];
+var HEADERS = ["id", "code", "location", "note", "position", "status", "added", "addedby", "statusBy", "statusDate", "lastModified"];
 
 // Hernoem verouderde locatienamen bij het ophalen uit de sheet
 var LOCATION_RENAMES = { "Omvormerruimte": "OMVR B.", "Walsen Loods": "W.L. Oud" };
@@ -84,13 +84,15 @@ function handleGet() {
 function handleAdd(dataParam) {
   if (!dataParam) throw new Error("Geen data voor add");
   var item = JSON.parse(dataParam);
+  var newLM = new Date().toISOString();
+  item.lastModified = newLM;
   var sheet = getOrCreateSheet();
   var row = HEADERS.map(function(h) {
     return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
   });
   sheet.appendRow(row);
   Logger.log("ADD: " + item.code + " toegevoegd");
-  return { success: true, action: "add", id: item.id };
+  return { success: true, action: "add", id: item.id, lastModified: newLM };
 }
 
 // ----------------------------------------------------------
@@ -103,14 +105,35 @@ function handleUpdate(dataParam) {
   var rows = sheet.getDataRange().getValues();
   var headers = rows[0];
   var idCol = headers.indexOf("id");
+  var lmCol = headers.indexOf("lastModified");
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][idCol]) === String(item.id)) {
+      // Conflictdetectie: als client een expectedLastModified meestuurt,
+      // vergelijk met de huidige waarde in de sheet.
+      if (item.expectedLastModified && lmCol !== -1) {
+        var serverLM = cellToString(rows[i][lmCol]);
+        if (serverLM && serverLM !== item.expectedLastModified) {
+          var serverItem = {};
+          for (var j = 0; j < headers.length; j++) {
+            var key = headers[j];
+            var val = cellToString(rows[i][j]);
+            if (key === "status") serverItem[key] = statusVanSheet(val);
+            else if (key === "location") serverItem[key] = LOCATION_RENAMES[val] || val;
+            else serverItem[key] = val;
+          }
+          Logger.log("CONFLICT: rij " + (i+1) + " voor " + item.code + " (verwacht: " + item.expectedLastModified + ", server: " + serverLM + ")");
+          return { conflict: true, serverItem: serverItem, message: "Record is gewijzigd door een ander toestel" };
+        }
+      }
+      var newLM = new Date().toISOString();
+      item.lastModified = newLM;
+      delete item.expectedLastModified;
       var newRow = HEADERS.map(function(h) {
         return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
       });
       sheet.getRange(i + 1, 1, 1, HEADERS.length).setValues([newRow]);
       Logger.log("UPDATE: rij " + (i+1) + " bijgewerkt voor " + item.code);
-      return { success: true, action: "update", id: item.id };
+      return { success: true, action: "update", id: item.id, lastModified: newLM };
     }
   }
   throw new Error("ID niet gevonden voor update: " + item.id);
