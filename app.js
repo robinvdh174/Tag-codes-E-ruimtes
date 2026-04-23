@@ -1026,11 +1026,11 @@ function showFiltered() {
 // ============================================================
 async function addEntry() {
   const code = document.getElementById("newCode").value.trim();
-  const loc = document.getElementById("newLocation").value.trim();
+  let loc = document.getElementById("newLocation").value.trim();
   const note = document.getElementById("newNote").value.trim();
   const position = document.getElementById("newPosition").value.trim();
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
-  let canonicalLoc = findRoom(loc);
+  const canonicalLoc = findRoom(loc);
   if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
   loc = canonicalLoc;
 
