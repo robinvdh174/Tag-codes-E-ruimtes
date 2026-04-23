@@ -233,47 +233,50 @@ async function processQueue() {
   const queue = getQueue();
   if (queue.length === 0) return;
   _isProcessingQueue = true;
-  for (let i = 0; i < queue.length; i++) {
-    const entry = queue[i];
-    try {
-      if (entry.action === "add") {
-        const addResult = await sheetAction({ action: "add", data: JSON.stringify(entry.data) });
-        if (addResult && addResult.lastModified) {
-          const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
-          if (ix !== -1) { data[ix].lastModified = addResult.lastModified; saveLocal(); }
+  try {
+    for (let i = 0; i < queue.length; i++) {
+      const entry = queue[i];
+      try {
+        if (entry.action === "add") {
+          const addResult = await sheetAction({ action: "add", data: JSON.stringify(entry.data) });
+          if (addResult && addResult.lastModified) {
+            const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
+            if (ix !== -1) { data[ix].lastModified = addResult.lastModified; saveLocal(); }
+          }
+        } else if (entry.action === "update") {
+          const updResult = await sheetAction({ action: "update", data: JSON.stringify(entry.data) });
+          if (updResult && updResult.conflict) {
+            dequeue(entry.queueId);
+            await handleConflictResult(updResult, entry.data);
+            break;
+          }
+          if (updResult && updResult.lastModified) {
+            const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
+            if (ix !== -1) { data[ix].lastModified = updResult.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
+          }
+        } else if (entry.action === "delete") {
+          await sheetAction({ action: "delete", id: entry.data.id });
         }
-      } else if (entry.action === "update") {
-        const updResult = await sheetAction({ action: "update", data: JSON.stringify(entry.data) });
-        if (updResult && updResult.conflict) {
-          dequeue(entry.queueId);
-          await handleConflictResult(updResult, entry.data);
-          break;
-        }
-        if (updResult && updResult.lastModified) {
-          const ix = data.findIndex(function(d) { return d.id === entry.data.id; });
-          if (ix !== -1) { data[ix].lastModified = updResult.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
-        }
-      } else if (entry.action === "delete") {
-        await sheetAction({ action: "delete", id: entry.data.id });
-      }
-      dequeue(entry.queueId);
-      if (entry.action === "add") {
-        await logAction("Toegevoegd", entry.data.code, entry.data.location, "Logboek Toevoegingen");
-      }
-    } catch(e) {
-      entry.retries = (entry.retries || 0) + 1;
-      if (entry.retries > 10) {
         dequeue(entry.queueId);
-        showToast("Sync definitief mislukt: " + entry.action + " " + (entry.data.code || entry.data.id), true);
-      } else {
-        saveQueue(getQueue().map(function(q) {
-          return q.queueId === entry.queueId ? entry : q;
-        }));
+        if (entry.action === "add") {
+          await logAction("Toegevoegd", entry.data.code, entry.data.location, "Logboek Toevoegingen");
+        }
+      } catch(e) {
+        entry.retries = (entry.retries || 0) + 1;
+        if (entry.retries > 10) {
+          dequeue(entry.queueId);
+          showToast("Sync definitief mislukt: " + entry.action + " " + (entry.data.code || entry.data.id), true);
+        } else {
+          saveQueue(getQueue().map(function(q) {
+            return q.queueId === entry.queueId ? entry : q;
+          }));
+        }
+        break;
       }
-      break;
     }
+  } finally {
+    _isProcessingQueue = false;
   }
-  _isProcessingQueue = false;
   updatePendingBadge();
   if (getQueueLength() === 0) {
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
@@ -344,13 +347,16 @@ async function syncFromSheets(silent) {
         const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
         setSyncStatus("ok", "Gesync " + now);
       } else if (Array.isArray(json) && json.length === 0) {
-        // Server is leeg — behoud lokaal alleen records met een pending write,
-        // anders zou een add-in-flight verdwijnen.
-        data = data.filter(function(d) { return d.id && _pendingIds.has(d.id); });
-        saveLocal();
-        refreshUI();
-        const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-        setSyncStatus("ok", "Gesync " + now + " (leeg)");
+        // Server gaf [] terug. Als we lokaal records hebben is dit verdacht
+        // (tijdelijke fout of timeout) — niet destructief wissen, data
+        // behouden en waarschuwen. Als lokaal óók leeg is, sync is gewoon ok.
+        if (data.length > 0) {
+          if (!silent) showToast("Server gaf lege lijst terug. Lokale data behouden.", true);
+          setSyncStatus("offline", "Server leeg — lokale data behouden");
+        } else {
+          const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+          setSyncStatus("ok", "Gesync " + now + " (leeg)");
+        }
       } else {
         setSyncStatus("offline", "Ongeldig antwoord");
       }
@@ -872,7 +878,7 @@ function _openNaamModal(id, newStatus) {
     titelEl.textContent = "Loskoppelen registreren";
   }
   document.getElementById("statusNaamInput").value = "";
-  document.getElementById("statusDatumInput").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("statusDatumInput").value = todayISO();
   document.getElementById("statusNaamError").textContent = "";
   document.getElementById("statusNaamOverlay").classList.add("open");
   setTimeout(function() { const el = document.getElementById("statusNaamInput"); if (el) el.focus(); }, 150);
@@ -930,7 +936,6 @@ async function setStatus(id, newStatus, naam, datum) {
   }
   if (idx === -1) return;
 
-  const previousItem = Object.assign({}, data[idx]);
   const statusUpdate = { status: newStatus };
   if (newStatus === "") {
     statusUpdate.statusBy = "";
@@ -1390,7 +1395,16 @@ async function handleConflictResult(result, localItem) {
   } else {
     delete localItem.expectedLastModified;
     localItem.lastModified = result.serverItem.lastModified;
-    await sheetAction({ action: "update", data: JSON.stringify(localItem) });
+    const retryResult = await sheetAction({ action: "update", data: JSON.stringify(localItem) });
+    if (retryResult && retryResult.conflict) {
+      // Tijdens het oplossen heeft iemand anders opnieuw bewerkt — opnieuw
+      // vragen om de conflictkeuze in plaats van stil te overschrijven.
+      await handleConflictResult(retryResult, localItem);
+      return true;
+    }
+    if (retryResult && retryResult.lastModified) {
+      localItem.lastModified = retryResult.lastModified;
+    }
     const idx = data.findIndex(function(d) { return d.id === localItem.id; });
     if (idx !== -1) { data[idx] = localItem; saveLocal(); refreshUI(); }
     showToast("Jouw versie opgeslagen.");
@@ -1464,13 +1478,43 @@ function showPinEnter() {
     "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='8' inputmode='numeric' autocomplete='new-password' oninput='verifyPin()'>" +
     "<div class='pin-error' id='pinErr'></div>";
   ov.classList.add("open");
-  setTimeout(function() { const el = document.getElementById("pinInput"); if (el) el.focus(); }, 150);
+  // Als de pagina herladen is tijdens een lockout, toon direct de countdown
+  // in plaats van pas bij 4 ingetypte cijfers.
+  if (_pinLockUntil > Date.now()) {
+    startPinLockCountdown();
+  } else {
+    setTimeout(function() { const el = document.getElementById("pinInput"); if (el) el.focus(); }, 150);
+  }
 }
 
 let _pinAttempts = 0;
 let _pinLockUntil = parseInt(safeGet("ekast-pin-lock", "0"), 10);
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minuten
+
+function startPinLockCountdown() {
+  const input = document.getElementById("pinInput");
+  const errEl = document.getElementById("pinErr");
+  if (!input || !errEl) return;
+  input.value = "";
+  input.disabled = true;
+  input._checking = false;
+  let iv;
+  const tick = function() {
+    const left = Math.ceil((_pinLockUntil - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(iv);
+      _pinAttempts = 0;
+      errEl.textContent = "";
+      input.disabled = false;
+      input.focus();
+    } else {
+      errEl.textContent = "Geblokkeerd. Wacht " + left + " seconden.";
+    }
+  };
+  tick();
+  iv = setInterval(tick, 1000);
+}
 
 async function verifyPin() {
   const input = document.getElementById("pinInput");
@@ -1498,24 +1542,7 @@ async function verifyPin() {
       if (_pinAttempts >= PIN_MAX_ATTEMPTS) {
         _pinLockUntil = Date.now() + PIN_LOCKOUT_MS;
         safeSet("ekast-pin-lock", _pinLockUntil.toString());
-        errEl.textContent = "Te veel pogingen. 5 minuten geblokkeerd.";
-        input.value = "";
-        input.disabled = true;
-        input._checking = false;
-        // Start countdown
-        let lockInterval = setInterval(function() {
-          let left = Math.ceil((_pinLockUntil - Date.now()) / 1000);
-          if (left <= 0) {
-            clearInterval(lockInterval);
-            _pinAttempts = 0;
-            errEl.textContent = "";
-            input.disabled = false;
-            input._checking = false;
-            input.focus();
-          } else {
-            errEl.textContent = "Geblokkeerd. Wacht " + left + " seconden.";
-          }
-        }, 1000);
+        startPinLockCountdown();
         return;
       }
       errEl.textContent = "Onjuiste PIN. Nog " + (PIN_MAX_ATTEMPTS - _pinAttempts) + " pogingen.";
