@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
 <title>E-Kast Zoeker</title>
 <link rel="preconnect" href="https://script.google.com" crossorigin>
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
@@ -60,6 +60,7 @@
   <!-- ZOEKEN -->
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
     <input type="text" id="searchInput" placeholder="Typ kastnummer, Tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem" aria-label="Zoek kasten">
+    <button type="button" class="btn-scan" onclick="openScan()" aria-label="Bon scannen met camera"><span class="scan-ico">&#128247;</span> Bon scannen</button>
     <div class="count">Gevonden: <b id="resultCount">0</b></div>
     <div id="searchResults" class="card-grid">
       <div class="empty">
@@ -110,6 +111,26 @@
     <button class="btn-primary" id="btnAdd" onclick="addEntry()">OPSLAAN</button>
   </div>
 </main>
+
+<!-- Bon-scan modal -->
+<div class="modal-overlay" id="scanModal" onclick="if(event.target===this)closeScan()">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-title">&#128247; Bon scannen</div>
+    <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="position:absolute;left:-9999px;top:-9999px;" onchange="onScanFileChosen(event)">
+    <div id="scanInitial">
+      <p class="scan-help">Maak een foto van de bon. De app leest de tag-code automatisch en gooit de foto daarna weg &mdash; ze wordt nergens bewaard.</p>
+      <button class="btn-primary" type="button" onclick="document.getElementById('scanFileInput').click()">&#128247; Foto maken</button>
+    </div>
+    <div id="scanProcessing" style="display:none;text-align:center;padding:1.5rem 0;">
+      <div class="scan-spinner" aria-hidden="true"></div>
+      <div id="scanProgress" class="scan-progress">Bon analyseren&hellip;</div>
+    </div>
+    <div id="scanResult" style="display:none;"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" type="button" onclick="closeScan()">Sluiten</button>
+    </div>
+  </div>
+</div>
 
 <!-- Bewerk modal -->
 <div class="modal-overlay" id="editModal" onclick="if(event.target===this)closeModal()">

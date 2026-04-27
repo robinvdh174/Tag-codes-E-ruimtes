@@ -1732,6 +1732,343 @@ function unlockApp() {
 }
 
 // ============================================================
+// ============================================================
+// BON SCANNEN (OCR via Tesseract.js, lazy-loaded)
+// ============================================================
+// Foto wordt enkel in werkgeheugen verwerkt en daarna actief
+// weggegooid — niet gecached, niet gesynced, nergens opgeslagen.
+
+const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let _tesseractLoadPromise = null;
+let _tesseractWorker = null;
+
+function _loadTesseract() {
+  if (_tesseractLoadPromise) return _tesseractLoadPromise;
+  _tesseractLoadPromise = new Promise(function(resolve, reject) {
+    if (typeof Tesseract !== "undefined") { resolve(window.Tesseract); return; }
+    const s = document.createElement("script");
+    s.src = TESSERACT_CDN;
+    s.async = true;
+    s.onload = function() {
+      if (typeof Tesseract !== "undefined") resolve(window.Tesseract);
+      else reject(new Error("Tesseract niet beschikbaar na laden"));
+    };
+    s.onerror = function() { reject(new Error("Kon scan-bibliotheek niet laden (geen internet?)")); };
+    document.head.appendChild(s);
+  });
+  return _tesseractLoadPromise;
+}
+
+function openScan() {
+  const m = document.getElementById("scanModal");
+  if (!m) return;
+  _resetScanUI();
+  m.classList.add("open");
+}
+
+function closeScan() {
+  const m = document.getElementById("scanModal");
+  if (!m) return;
+  m.classList.remove("open");
+  _resetScanUI();
+}
+
+function _resetScanUI() {
+  const init = document.getElementById("scanInitial");
+  const proc = document.getElementById("scanProcessing");
+  const res = document.getElementById("scanResult");
+  const inp = document.getElementById("scanFileInput");
+  if (init) init.style.display = "";
+  if (proc) proc.style.display = "none";
+  if (res) { res.style.display = "none"; res.textContent = ""; }
+  if (inp) inp.value = "";
+}
+
+function _setScanProgress(msg) {
+  const el = document.getElementById("scanProgress");
+  if (el) el.textContent = msg;
+}
+
+async function onScanFileChosen(ev) {
+  const file = ev && ev.target && ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const init = document.getElementById("scanInitial");
+  const proc = document.getElementById("scanProcessing");
+  const res = document.getElementById("scanResult");
+  if (init) init.style.display = "none";
+  if (res) res.style.display = "none";
+  if (proc) proc.style.display = "";
+  _setScanProgress("Scan-bibliotheek laden…");
+
+  let imgUrl = null;
+  try {
+    await _loadTesseract();
+    _setScanProgress("Bon analyseren…");
+    imgUrl = URL.createObjectURL(file);
+    const result = await Tesseract.recognize(imgUrl, "eng", {
+      logger: function(p) {
+        if (p && p.status === "recognizing text" && typeof p.progress === "number") {
+          _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
+        }
+      }
+    });
+    const text = (result && result.data && result.data.text) || "";
+    _showScanResult(_parseBonText(text));
+  } catch (err) {
+    console.warn("Scan mislukt:", err);
+    _showScanError(err && err.message ? err.message : "Onbekende fout");
+  } finally {
+    // Foto actief weggooien — geen verwijzing meer naar de blob.
+    if (imgUrl) { try { URL.revokeObjectURL(imgUrl); } catch (e) {} }
+    const inp = document.getElementById("scanFileInput");
+    if (inp) inp.value = "";
+  }
+}
+
+// Parse de OCR-tekst van een Sappi werkbon. We zoeken naar de labels
+// "Tag-code E", "Tag-code M", "machine" en "omschrijving" en pakken
+// de tekst er vlak achter (of op de volgende regel als de waarde in
+// een tabelcel staat).
+function _parseBonText(text) {
+  const cleanCode = function(s) {
+    return String(s || "").replace(/[\s|]+/g, " ").trim()
+      .replace(/^[^A-Za-z0-9]+/, "")
+      .replace(/[^A-Za-z0-9.\-_/]+$/, "");
+  };
+  // Zoekt eerste "code-achtige" token (letter+cijfers, of cijfers+letter).
+  const firstCodeToken = function(s) {
+    if (!s) return "";
+    const m = String(s).match(/[A-Za-z0-9][A-Za-z0-9.\-_/]{1,}/);
+    return m ? m[0] : "";
+  };
+
+  const lines = String(text || "").split(/\r?\n/);
+  const result = { tagE: "", tagM: "", machine: "", omschrijving: "", raw: text };
+
+  // Strategie: per regel kijken of er een label op staat. Als de
+  // waarde op dezelfde regel staat (na ":"), gebruiken we die. Anders
+  // kijken we naar de eerstvolgende niet-lege regel.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const tagMatch = trimmed.match(/tag.?code\s*([EMem])\s*[:\-]?\s*(.*)$/i);
+    if (tagMatch) {
+      const which = tagMatch[1].toUpperCase();
+      let val = (tagMatch[2] || "").trim();
+      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
+      const code = firstCodeToken(val);
+      if (which === "E" && !result.tagE) result.tagE = code;
+      if (which === "M" && !result.tagM) result.tagM = code;
+      continue;
+    }
+
+    if (/^machine\b/i.test(trimmed) && !result.machine) {
+      const m = trimmed.match(/^machine\s*[:\-]?\s*(.*)$/i);
+      let val = (m && m[1]) ? m[1].trim() : "";
+      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
+      result.machine = cleanCode(firstCodeToken(val));
+      continue;
+    }
+
+    if (/^omschrijving\b/i.test(trimmed) && !result.omschrijving) {
+      const m = trimmed.match(/^omschrijving\s*[:\-]?\s*(.*)$/i);
+      let val = (m && m[1]) ? m[1].trim() : "";
+      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
+      result.omschrijving = val.replace(/\s+/g, " ").slice(0, 80);
+    }
+  }
+  return result;
+}
+
+function _showScanResult(parsed) {
+  const proc = document.getElementById("scanProcessing");
+  const res = document.getElementById("scanResult");
+  if (proc) proc.style.display = "none";
+  if (!res) return;
+  res.textContent = "";
+  res.style.display = "";
+
+  const hasE = !!parsed.tagE;
+  const hasM = !!parsed.tagM;
+
+  if (!hasE && !hasM) {
+    // Geen tag-code gevonden — toon vangnetten.
+    const t = document.createElement("div");
+    t.className = "scan-result-title";
+    t.textContent = "Geen tag-code gevonden";
+    res.appendChild(t);
+
+    const sub = document.createElement("p");
+    sub.className = "scan-help";
+    sub.textContent = "Probeer met andere gegevens van de bon, of zoek handmatig.";
+    res.appendChild(sub);
+    _appendFallbackHints(res, parsed);
+    return;
+  }
+
+  // Wel een tag-code gevonden.
+  const t = document.createElement("div");
+  t.className = "scan-result-title";
+  t.textContent = "Gelezen van de bon";
+  res.appendChild(t);
+
+  if (hasE) _appendCodeRow(res, "Tag-code E", parsed.tagE, true);
+  if (hasM) _appendCodeRow(res, "Tag-code M", parsed.tagM, !hasE);
+  if (parsed.machine) _appendInfoRow(res, "Machine", parsed.machine);
+  if (parsed.omschrijving) _appendInfoRow(res, "Omschrijving", parsed.omschrijving);
+
+  const hint = document.createElement("p");
+  hint.className = "scan-help";
+  hint.style.marginTop = ".8rem";
+  hint.textContent = "Klopt de code niet? Tap op het veld om aan te passen.";
+  res.appendChild(hint);
+
+  // Fallback-chips ook tonen als de gelezen code niet bestaat.
+  const primary = hasE ? parsed.tagE : parsed.tagM;
+  if (!_codeExistsInData(primary)) {
+    const warn = document.createElement("div");
+    warn.className = "scan-warn";
+    warn.textContent = "⚠ “" + primary + "” komt niet voor in de database.";
+    res.appendChild(warn);
+    _appendFallbackHints(res, parsed);
+  }
+}
+
+function _showScanError(msg) {
+  const proc = document.getElementById("scanProcessing");
+  const res = document.getElementById("scanResult");
+  if (proc) proc.style.display = "none";
+  if (!res) return;
+  res.textContent = "";
+  res.style.display = "";
+  const t = document.createElement("div");
+  t.className = "scan-result-title";
+  t.textContent = "Scannen mislukt";
+  res.appendChild(t);
+  const p = document.createElement("p");
+  p.className = "scan-help";
+  p.textContent = msg;
+  res.appendChild(p);
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "btn-primary";
+  retry.textContent = "Opnieuw proberen";
+  retry.onclick = function() { _resetScanUI(); };
+  res.appendChild(retry);
+}
+
+function _appendCodeRow(parent, label, code, isPrimary) {
+  const row = document.createElement("div");
+  row.className = "scan-row";
+  const lbl = document.createElement("div");
+  lbl.className = "scan-row-label";
+  lbl.textContent = label;
+  row.appendChild(lbl);
+
+  const inputWrap = document.createElement("div");
+  inputWrap.className = "scan-row-input";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = code;
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.className = "scan-edit-input";
+  inputWrap.appendChild(input);
+  row.appendChild(inputWrap);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn-primary scan-search-btn";
+  btn.textContent = "→ Zoek";
+  btn.onclick = function() {
+    const v = input.value.trim();
+    if (!v) return;
+    _searchFromScan(v);
+  };
+  row.appendChild(btn);
+
+  parent.appendChild(row);
+
+  // Eerste/primaire krijgt focus zodat de gebruiker meteen kan corrigeren of bevestigen.
+  if (isPrimary) {
+    setTimeout(function() { try { input.focus(); input.select(); } catch (e) {} }, 50);
+  }
+}
+
+function _appendInfoRow(parent, label, val) {
+  const row = document.createElement("div");
+  row.className = "scan-info-row";
+  const lbl = document.createElement("span");
+  lbl.className = "scan-info-label";
+  lbl.textContent = label + ": ";
+  const v = document.createElement("span");
+  v.className = "scan-info-val";
+  v.textContent = val;
+  row.appendChild(lbl);
+  row.appendChild(v);
+  parent.appendChild(row);
+}
+
+function _appendFallbackHints(parent, parsed) {
+  const wrap = document.createElement("div");
+  wrap.className = "scan-fallback";
+  const lbl = document.createElement("div");
+  lbl.className = "scan-row-label";
+  lbl.textContent = "Zoek met:";
+  wrap.appendChild(lbl);
+  const row = document.createElement("div");
+  row.className = "suggestions-row";
+
+  const addChip = function(text) {
+    if (!text) return;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "suggestion-chip";
+    chip.textContent = text;
+    chip.onclick = function() { _searchFromScan(text); };
+    row.appendChild(chip);
+  };
+  addChip(parsed.machine);
+  if (parsed.omschrijving) addChip(parsed.omschrijving.split(/\s+/).slice(0, 3).join(" "));
+  if (parsed.tagE) addChip(parsed.tagE);
+  if (parsed.tagM) addChip(parsed.tagM);
+
+  if (row.childNodes.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "scan-help";
+    empty.textContent = "Geen bruikbare gegevens gevonden op de bon. Sluit en zoek handmatig.";
+    wrap.appendChild(empty);
+  } else {
+    wrap.appendChild(row);
+  }
+  parent.appendChild(wrap);
+}
+
+function _codeExistsInData(code) {
+  if (!code) return false;
+  const n = _normCode(code);
+  if (!n) return false;
+  for (let i = 0; i < data.length; i++) {
+    if (_normCode(data[i].code) === n) return true;
+  }
+  return false;
+}
+
+function _searchFromScan(term) {
+  closeScan();
+  // Zoektab actief maken indien nodig
+  try { switchTab("search"); } catch (e) {}
+  const input = document.getElementById("searchInput");
+  if (input) {
+    input.value = term;
+    doSearch(term);
+    try { input.focus(); } catch (e) {}
+  }
+}
+
+// ============================================================
 // START
 // ============================================================
 checkPin();
