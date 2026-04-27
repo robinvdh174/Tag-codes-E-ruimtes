@@ -463,8 +463,6 @@ async function syncRooms() {
         stored[r.name] = r.desc || "";
         localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
       } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
-      const dl = document.getElementById("roomSuggestions");
-      if (dl) { const opt = document.createElement("option"); opt.value = r.name; dl.appendChild(opt); }
     });
   } catch(e) {
     console.warn("syncRooms mislukt:", e);
@@ -1328,8 +1326,6 @@ async function saveNewRoom() {
     stored[name] = desc;
     localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
   } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
-  const dl = document.getElementById("roomSuggestions");
-  if (dl) { const opt = document.createElement("option"); opt.value = name; dl.appendChild(opt); }
   closeAddRoomModal();
   showToast("Ruimte \"" + name + "\" toegevoegd.");
 
