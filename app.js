@@ -621,41 +621,155 @@ function updateStatusBadge() {
 // ============================================================
 // ZOEKEN
 // ============================================================
+// Strip alles behalve a-z/0-9 → "C-404" / "c 404" / "C.404" worden gelijk.
+function _normCode(s) {
+  return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+// Lichte normalisatie voor vrije tekst (ruimte/notitie/positie).
+function _normText(s) {
+  return String(s == null ? "" : s).toLowerCase();
+}
+
+// Levenshtein-afstand met early-exit als afstand > maxDist.
+// Gebruikt voor "Bedoelde je..."-suggesties bij 0 resultaten.
+function _lev(a, b, maxDist) {
+  const al = a.length, bl = b.length;
+  if (Math.abs(al - bl) > maxDist) return maxDist + 1;
+  if (al === 0) return bl;
+  if (bl === 0) return al;
+  let prev = new Array(bl + 1);
+  let curr = new Array(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    const ac = a.charCodeAt(i - 1);
+    for (let j = 1; j <= bl; j++) {
+      const cost = ac === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > maxDist) return maxDist + 1;
+    const tmp = prev; prev = curr; curr = tmp;
+  }
+  return prev[bl];
+}
+
+// Geeft een score (hoger = beter) of -1 bij geen match.
+// Code-veld wordt strikt vergeleken (genormaliseerd, geen fuzzy);
+// vrije-tekstvelden gewoon op substring.
+function _scoreItem(d, qNormCode, qNormText) {
+  const codeNorm = _normCode(d.code);
+  if (qNormCode) {
+    if (codeNorm === qNormCode) return 1000;
+    if (codeNorm.indexOf(qNormCode) === 0) return 900 - qNormCode.length; // prefix
+    const idx = codeNorm.indexOf(qNormCode);
+    if (idx !== -1) return 800 - idx;
+  }
+  const loc = _normText(d.location);
+  if (qNormText && loc) {
+    if (loc.indexOf(qNormText) === 0) return 500;
+    if (loc.indexOf(qNormText) !== -1) return 400;
+  }
+  const note = _normText(d.note);
+  if (qNormText && note && note.indexOf(qNormText) !== -1) return 300;
+  const pos = _normText(d.position);
+  if (qNormText && pos && pos.indexOf(qNormText) !== -1) return 200;
+  return -1;
+}
+
 let _searchTimer = null;
 function doSearch(value) {
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(function() { _doSearchNow(value); }, 150);
 }
 function _doSearchNow(value) {
-  const v = value.toLowerCase().trim();
+  const raw = String(value == null ? "" : value).trim();
   const countEl = document.getElementById("resultCount");
   const container = document.getElementById("searchResults");
-  if (!v) {
+  if (!raw) {
     _currentSearchTerm = "";
     countEl.innerText = "0";
     container.innerHTML = "<div class=\"empty\"><b>Typ een kastnummer</b><span id=\"totalCount\">" + data.length + "</span> kasten beschikbaar<br><span style=\"color:#4a9eff;font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;\">Sappi</span></div>";
     return;
   }
-  _currentSearchTerm = value.trim();
-  let results = [];
+  _currentSearchTerm = raw;
+  const qNormCode = _normCode(raw);
+  const qNormText = _normText(raw);
+  const scored = [];
   for (let i = 0; i < data.length; i++) {
-    let d = data[i];
-    if ((d.code||"").toLowerCase().indexOf(v) !== -1 ||
-        (d.location||"").toLowerCase().indexOf(v) !== -1 ||
-        (d.note||"").toLowerCase().indexOf(v) !== -1 ||
-        (d.position||"").toLowerCase().indexOf(v) !== -1) {
-      results.push(d);
-    }
+    const s = _scoreItem(data[i], qNormCode, qNormText);
+    if (s >= 0) scored.push({ item: data[i], score: s });
   }
-  countEl.innerText = results.length;
+  scored.sort(function(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return (a.item.code || "").localeCompare(b.item.code || "");
+  });
+  countEl.innerText = scored.length;
   container.textContent = "";
-  if (results.length === 0) {
-    container.innerHTML = "<div class=\"empty\"><b>Niets gevonden</b>Probeer een andere zoekterm</div>";
+  if (scored.length === 0) {
+    _renderNoResults(container, raw, qNormCode);
     return;
   }
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < results.length; i++) frag.appendChild(makeCard(results[i]));
+  for (let i = 0; i < scored.length; i++) frag.appendChild(makeCard(scored[i].item));
   container.appendChild(frag);
+}
+
+// "Bedoelde je..."-suggesties op basis van Levenshtein-afstand op
+// de genormaliseerde code. Alleen bij queries van 3+ tekens, max 1 typo
+// voor korte codes en 2 voor langere — voorkomt vals-positieven zoals
+// C404 ↔ C504 die echt verschillende kasten zijn.
+function _renderNoResults(container, raw, qNormCode) {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  const title = document.createElement("b");
+  title.textContent = "Niets gevonden";
+  empty.appendChild(title);
+  empty.appendChild(document.createTextNode("Probeer een andere zoekterm"));
+
+  if (qNormCode.length >= 3) {
+    const maxDist = qNormCode.length >= 6 ? 2 : 1;
+    const cand = [];
+    for (let i = 0; i < data.length; i++) {
+      const cn = _normCode(data[i].code);
+      if (!cn) continue;
+      const d = _lev(qNormCode, cn, maxDist);
+      if (d <= maxDist) cand.push({ item: data[i], dist: d });
+    }
+    cand.sort(function(a, b) {
+      if (a.dist !== b.dist) return a.dist - b.dist;
+      return (a.item.code || "").localeCompare(b.item.code || "");
+    });
+    const top = cand.slice(0, 5);
+    if (top.length > 0) {
+      const wrap = document.createElement("div");
+      wrap.className = "suggestions";
+      const lbl = document.createElement("div");
+      lbl.className = "suggestions-label";
+      lbl.textContent = "Bedoelde je:";
+      wrap.appendChild(lbl);
+      const row = document.createElement("div");
+      row.className = "suggestions-row";
+      for (let i = 0; i < top.length; i++) {
+        const it = top[i].item;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "suggestion-chip";
+        chip.textContent = it.code || "(zonder code)";
+        chip.onclick = (function(code) {
+          return function() {
+            const inp = document.getElementById("searchInput");
+            if (inp) { inp.value = code; doSearch(code); inp.focus(); }
+          };
+        })(it.code || "");
+        row.appendChild(chip);
+      }
+      wrap.appendChild(row);
+      empty.appendChild(wrap);
+    }
+  }
+  container.appendChild(empty);
 }
 
 // ============================================================
