@@ -1193,9 +1193,10 @@ async function saveEdit() {
     _pendingIds.delete(id);
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    await logAction("Bewerkt", updatedItem.code, updatedItem.location, "Logboek Bewerkingen");
   } catch(e) {
     _pendingIds.delete(id);
-    enqueue("update", updatedItem);
+    enqueue("update", updatedItem, { label: "Bewerkt", sheet: "Logboek Bewerkingen" });
     showToast("Lokaal opgeslagen — sync wacht op verbinding.");
     console.warn("saveEdit offline:", e);
   } finally {
@@ -1228,9 +1229,14 @@ async function deleteEntry(id) {
     _pendingIds.delete(id);
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    await logAction("Verwijderd", removedItem.code || "", removedItem.location || "", "Logboek Verwijderingen");
   } catch(e) {
     _pendingIds.delete(id);
-    enqueue("delete", { id: id, code: removedItem.code });
+    enqueue(
+      "delete",
+      { id: id, code: removedItem.code || "", location: removedItem.location || "" },
+      { label: "Verwijderd", sheet: "Logboek Verwijderingen" }
+    );
     console.warn("deleteEntry offline:", e);
   }
 }
