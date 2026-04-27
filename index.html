@@ -24,7 +24,7 @@
   <div class="header-row">
     <div>
       <h1>E-KAST ZOEKER</h1>
-      <p class="sub">Elektriciteitskasten &bull; Sappi</p>
+      <p class="sub">Verdelers &bull; Sappi</p>
     </div>
     <div class="sync-badge idle" id="syncBadge" onclick="manualSync()" title="Klik om te synchroniseren">
       <div class="sync-dot"></div>
@@ -59,7 +59,7 @@
 <main>
   <!-- ZOEKEN -->
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
-    <input type="text" id="searchInput" placeholder="Typ kastnummer, ruimte of notitie..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem" aria-label="Zoek kasten">
+    <input type="text" id="searchInput" placeholder="Typ kastnummer, Tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem" aria-label="Zoek kasten">
     <div class="count">Gevonden: <b id="resultCount">0</b></div>
     <div id="searchResults" class="card-grid">
       <div class="empty">
@@ -92,7 +92,7 @@
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
     <div class="setup-box" id="setupBox" style="display:none">
       <p><strong style="color:var(--accent)">⚙️ Google Sheets sync niet geconfigureerd</strong></p>
-      <p style="margin-top:.5rem">Wijzigingen worden lokaal opgeslagen maar niet gesynchroniseerd. Stel de <code>SCRIPT_URL</code> in bovenaan de HTML om sync te activeren.</p>
+      <p style="margin-top:.5rem">Wijzigingen worden lokaal opgeslagen maar niet gesynchroniseerd. Stel de <code>SCRIPT_URL</code> in bovenaan <code>app.js</code> om sync te activeren.</p>
     </div>
 
     <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="50"></div>
@@ -103,10 +103,19 @@
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
       <datalist id="roomSuggestions">
-        <option value="Stofkisten Gang"><option value="OMVR B."><option value="3KV">
-        <option value="OR12"><option value="W.L. Oud"><option value="Lift 19">
-        <option value="DH"><option value="E-Ruimte 774-12"><option value="W.L. Nieuw">
-        <option value="CSBO"><option value="Lift 21"><option value="NICO-B"><option value="NICO-O">
+        <option value="Stofkisten Gang"></option>
+        <option value="OMVR B."></option>
+        <option value="3KV"></option>
+        <option value="OR12"></option>
+        <option value="W.L. Oud"></option>
+        <option value="Lift 19"></option>
+        <option value="DH"></option>
+        <option value="E-Ruimte 774-12"></option>
+        <option value="W.L. Nieuw"></option>
+        <option value="CSBO"></option>
+        <option value="Lift 21"></option>
+        <option value="NICO-B"></option>
+        <option value="NICO-O"></option>
       </datalist>
     </div>
     <div class="form-group"><label>Positie in ruimte (optioneel)</label>

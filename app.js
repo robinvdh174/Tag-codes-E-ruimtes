@@ -168,7 +168,7 @@ function saveQueue(queue) {
   catch(e) { console.warn("Queue opslaan mislukt:", e); }
 }
 
-function enqueue(action, itemData) {
+function enqueue(action, itemData, logInfo) {
   const queue = getQueue();
   const itemId = itemData.id;
   if (action === "delete") {
@@ -185,6 +185,16 @@ function enqueue(action, itemData) {
     if (existIdx !== -1) {
       queue[existIdx].data = itemData;
       queue[existIdx].timestamp = Date.now();
+      if (logInfo) queue[existIdx].logInfo = logInfo;
+      saveQueue(queue);
+      return;
+    }
+  }
+  if (action === "addRoom") {
+    const existIdx = queue.findIndex(function(q) { return q.action === "addRoom" && q.data && q.data.name === itemData.name; });
+    if (existIdx !== -1) {
+      queue[existIdx].data = itemData;
+      queue[existIdx].timestamp = Date.now();
       saveQueue(queue);
       return;
     }
@@ -193,6 +203,7 @@ function enqueue(action, itemData) {
     queueId: newId(),
     action: action,
     data: itemData,
+    logInfo: logInfo || null,
     timestamp: Date.now(),
     retries: 0
   });
@@ -208,12 +219,6 @@ function dequeue(queueId) {
 
 function getQueueLength() {
   return getQueue().length;
-}
-
-function getPendingIds() {
-  const ids = new Set();
-  getQueue().forEach(function(q) { if (q.data && q.data.id) ids.add(q.data.id); });
-  return ids;
 }
 
 function updatePendingBadge() {
@@ -256,10 +261,14 @@ async function processQueue() {
           }
         } else if (entry.action === "delete") {
           await sheetAction({ action: "delete", id: entry.data.id });
+        } else if (entry.action === "addRoom") {
+          await sheetAction({ action: "addRoom", name: entry.data.name, desc: entry.data.desc || "" });
         }
         dequeue(entry.queueId);
         if (entry.action === "add") {
           await logAction("Toegevoegd", entry.data.code, entry.data.location, "Logboek Toevoegingen");
+        } else if (entry.logInfo && entry.logInfo.label) {
+          await logAction(entry.logInfo.label, entry.data.code || "", entry.data.location || "", entry.logInfo.sheet || "Logboek");
         }
       } catch(e) {
         entry.retries = (entry.retries || 0) + 1;
@@ -323,22 +332,33 @@ async function syncFromSheets(silent) {
       if (json.error) throw new Error(json.error);
       if (Array.isArray(json) && json.length > 0) {
         // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent.
-        // Records met pending writes worden NIET met serverdata overschreven.
+        // Records met pending writes (in-flight én in queue) worden NIET met serverdata
+        // overschreven, anders flippen offline-wijzigingen kort terug op het scherm tot
+        // de queue gedraind is. Pending deletes filteren we volledig uit de server-respons.
         const localMap = {};
         data.forEach(function(d) { if (d.id) localMap[d.id] = d; });
-        const merged = json.map(function(serverItem) {
-          let local = localMap[serverItem.id];
-          if (local && _pendingIds.has(serverItem.id)) return local;
-          if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
-            return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
-          }
-          return serverItem;
+        const protectedIds = new Set(_pendingIds);
+        const pendingDeleteIds = new Set();
+        getQueue().forEach(function(q) {
+          if (!q.data || !q.data.id) return;
+          protectedIds.add(q.data.id);
+          if (q.action === "delete") pendingDeleteIds.add(q.data.id);
         });
+        const merged = json
+          .filter(function(serverItem) { return !pendingDeleteIds.has(serverItem.id); })
+          .map(function(serverItem) {
+            let local = localMap[serverItem.id];
+            if (local && protectedIds.has(serverItem.id)) return local;
+            if (local && serverItem.status === local.status && !serverItem.statusBy && local.statusBy) {
+              return Object.assign({}, serverItem, { statusBy: local.statusBy, statusDate: local.statusDate || "" });
+            }
+            return serverItem;
+          });
         // Lokale records die nog niet op de server staan maar wel pending zijn (bv. add in flight)
         // niet verliezen: voeg ze achteraan toe.
         const seen = {};
         merged.forEach(function(it) { if (it && it.id) seen[it.id] = true; });
-        _pendingIds.forEach(function(pid) {
+        protectedIds.forEach(function(pid) {
           if (!seen[pid] && localMap[pid]) merged.push(localMap[pid]);
         });
         data = deduplicateById(merged);
@@ -489,6 +509,15 @@ async function init() {
       if (document.visibilityState === "visible" && SCRIPT_URL) {
         processQueue().then(function() { syncFromSheets(true); });
       }
+    });
+    // Tab-pill herberekenen bij rotatie/resize, anders blijft hij scheef hangen.
+    let _resizeTimer = null;
+    window.addEventListener("resize", function() {
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(function() {
+        const active = document.querySelector(".tab-pill[aria-selected='true']");
+        if (active && active.id) movePill(active.id.replace("tbtn-", ""));
+      }, 80);
     });
   }
 
@@ -675,7 +704,15 @@ function makeCard(item) {
   const card = document.createElement("div");
   card.className = "card";
   card.id = "c-" + id;
+  card.setAttribute("role", "button");
+  card.setAttribute("tabindex", "0");
   card.addEventListener("click", function() { selectCard(card); });
+  card.addEventListener("keydown", function(e) {
+    if ((e.key === "Enter" || e.key === " ") && e.target === card) {
+      e.preventDefault();
+      selectCard(card);
+    }
+  });
 
   const top = document.createElement("div");
   top.className = "card-top";
@@ -953,6 +990,9 @@ async function setStatus(id, newStatus, naam, datum) {
   saveLocal();
   refreshUI();
 
+  const statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
+  const logLabel = statusLabel + (naam ? " \u2014 " + naam : "");
+
   _pendingIds.add(id);
   try {
     const result = await sheetAction({ action: "update", data: JSON.stringify(updatedItem) });
@@ -967,12 +1007,11 @@ async function setStatus(id, newStatus, naam, datum) {
     }
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
-    const statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
-    await logAction(statusLabel + (naam ? " \u2014 " + naam : ""), updatedItem.code, updatedItem.location, "Logboek Status");
+    await logAction(logLabel, updatedItem.code, updatedItem.location, "Logboek Status");
     _pendingIds.delete(id);
   } catch(e) {
     _pendingIds.delete(id);
-    enqueue("update", updatedItem);
+    enqueue("update", updatedItem, { label: logLabel, sheet: "Logboek Status" });
     showToast("Offline opgeslagen \u2014 wordt gesynchroniseerd zodra er verbinding is.");
     console.warn("setStatus sync:", e);
   }
@@ -1154,9 +1193,10 @@ async function saveEdit() {
     _pendingIds.delete(id);
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    await logAction("Bewerkt", updatedItem.code, updatedItem.location, "Logboek Bewerkingen");
   } catch(e) {
     _pendingIds.delete(id);
-    enqueue("update", updatedItem);
+    enqueue("update", updatedItem, { label: "Bewerkt", sheet: "Logboek Bewerkingen" });
     showToast("Lokaal opgeslagen — sync wacht op verbinding.");
     console.warn("saveEdit offline:", e);
   } finally {
@@ -1189,9 +1229,14 @@ async function deleteEntry(id) {
     _pendingIds.delete(id);
     const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
     setSyncStatus("ok", "Gesync " + now);
+    await logAction("Verwijderd", removedItem.code || "", removedItem.location || "", "Logboek Verwijderingen");
   } catch(e) {
     _pendingIds.delete(id);
-    enqueue("delete", { id: id, code: removedItem.code });
+    enqueue(
+      "delete",
+      { id: id, code: removedItem.code || "", location: removedItem.location || "" },
+      { label: "Verwijderd", sheet: "Logboek Verwijderingen" }
+    );
     console.warn("deleteEntry offline:", e);
   }
 }
@@ -1288,12 +1333,14 @@ async function saveNewRoom() {
   closeAddRoomModal();
   showToast("Ruimte \"" + name + "\" toegevoegd.");
 
-  // Syncen naar Sheets zodat alle toestellen de ruimte zien
+  // Syncen naar Sheets zodat alle toestellen de ruimte zien — bij netwerkfout
+  // belandt de ruimte in de offline queue zodat hij later alsnog gedeeld wordt.
   if (SCRIPT_URL) {
     try {
       await sheetAction({ action: "addRoom", name: name, desc: desc });
     } catch(e) {
-      console.warn("Ruimte sync mislukt:", e);
+      console.warn("Ruimte sync mislukt, in queue gezet:", e);
+      enqueue("addRoom", { name: name, desc: desc });
     }
   }
 }
@@ -1465,7 +1512,7 @@ async function savePin() {
     let uid = newId().slice(0, 8).toUpperCase();
     safeSet("ekast-device-id", uid);
   }
-  logAction("Registratie", "", "");
+  logAction("Registratie", "", "", "Logboek Aanmeldingen");
   unlockApp();
 }
 
@@ -1505,6 +1552,8 @@ function startPinLockCountdown() {
     if (left <= 0) {
       clearInterval(iv);
       _pinAttempts = 0;
+      _pinLockUntil = 0;
+      try { localStorage.removeItem("ekast-pin-lock"); } catch(e) {}
       errEl.textContent = "";
       input.disabled = false;
       input.focus();

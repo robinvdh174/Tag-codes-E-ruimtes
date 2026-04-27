@@ -237,6 +237,13 @@ function handleGetRooms() {
 // ----------------------------------------------------------
 function cellToString(val) {
   if (val instanceof Date) {
+    // Datum mét tijd (bijv. lastModified opgeslagen als ISO-timestamp en later
+    // door Sheets als Date geïnterpreteerd) → volledige ISO terugsturen, anders
+    // zou de conflictdetectie systematisch falen wanneer een gebruiker per
+    // ongeluk de kolom als datum formatteert.
+    if (val.getHours() !== 0 || val.getMinutes() !== 0 || val.getSeconds() !== 0 || val.getMilliseconds() !== 0) {
+      return val.toISOString();
+    }
     var y = val.getFullYear();
     var m = String(val.getMonth() + 1).padStart(2, "0");
     var d = String(val.getDate()).padStart(2, "0");

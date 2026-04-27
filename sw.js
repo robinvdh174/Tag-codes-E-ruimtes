@@ -1,11 +1,12 @@
-const CACHE_NAME = "ekast-v12";
+const CACHE_NAME = "ekast-v13";
 const ASSETS = [
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.json",
   "./ekast-icon.svg",
-  "./apple-touch-icon.png"
+  "./apple-touch-icon.png",
+  "./icon-512.png"
 ];
 
 self.addEventListener("install", function(e) {

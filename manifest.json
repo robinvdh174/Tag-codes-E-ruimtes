@@ -1,7 +1,7 @@
 {
   "name": "E-Kast Zoeker",
   "short_name": "E-Kast",
-  "description": "Elektriciteitskasten zoeken - Sappi",
+  "description": "Verdelers zoeken - Sappi",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0d0f12",
