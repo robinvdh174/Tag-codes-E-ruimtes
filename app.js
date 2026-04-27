@@ -510,6 +510,15 @@ async function init() {
         processQueue().then(function() { syncFromSheets(true); });
       }
     });
+    // Tab-pill herberekenen bij rotatie/resize, anders blijft hij scheef hangen.
+    let _resizeTimer = null;
+    window.addEventListener("resize", function() {
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(function() {
+        const active = document.querySelector(".tab-pill[aria-selected='true']");
+        if (active && active.id) movePill(active.id.replace("tbtn-", ""));
+      }, 80);
+    });
   }
 
   if (!SCRIPT_URL) {
@@ -695,7 +704,15 @@ function makeCard(item) {
   const card = document.createElement("div");
   card.className = "card";
   card.id = "c-" + id;
+  card.setAttribute("role", "button");
+  card.setAttribute("tabindex", "0");
   card.addEventListener("click", function() { selectCard(card); });
+  card.addEventListener("keydown", function(e) {
+    if ((e.key === "Enter" || e.key === " ") && e.target === card) {
+      e.preventDefault();
+      selectCard(card);
+    }
+  });
 
   const top = document.createElement("div");
   top.className = "card-top";
@@ -1529,6 +1546,8 @@ function startPinLockCountdown() {
     if (left <= 0) {
       clearInterval(iv);
       _pinAttempts = 0;
+      _pinLockUntil = 0;
+      try { localStorage.removeItem("ekast-pin-lock"); } catch(e) {}
       errEl.textContent = "";
       input.disabled = false;
       input.focus();
