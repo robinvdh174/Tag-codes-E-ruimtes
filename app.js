@@ -2009,8 +2009,8 @@ function _appendCodeRow(parent, label, code, isPrimary) {
       const r = werkbonAddItemByCode(v);
       if (r.reason === "added") {
         showToast("Toegevoegd: " + (r.item.code || v));
-        closeScan();
-        openWerkbon();
+        closeScan(); // werkbon-modal staat er al onder, blijft zichtbaar
+        _wbRenderItems();
       } else if (r.reason === "dup") {
         showToast("Stond al in de werkbon: " + (r.item.code || v));
       } else {
@@ -2091,10 +2091,9 @@ function _codeExistsInData(code) {
 
 function _searchFromScan(term) {
   if (_scanMode === "werkbon") {
-    // Geen kast-match? Zet de hint in werkbon's manuele zoekveld zodat
-    // de gebruiker daar kan kiezen — werkbon-context blijft behouden.
+    // Werkbon-modal staat al open onder scan-modal — gewoon scan
+    // sluiten en het manuele zoekveld pre-fillen voor selectie.
     closeScan();
-    openWerkbon();
     setTimeout(function() {
       const inp = document.getElementById("wbManualInput");
       if (inp) {
@@ -2198,7 +2197,9 @@ function werkbonSetVergunning(v) {
 
 function werkbonStartScan() {
   _scanMode = "werkbon";
-  closeWerkbon();
+  // Werkbon-modal blijft open onder de scan-modal — als de gebruiker
+  // de scan annuleert (sluit-knop of buitenklik) zit hij meteen weer
+  // op de werkbon i.p.v. de zoek-tab.
   openScan();
 }
 
@@ -2281,15 +2282,15 @@ async function werkbonApplyOne(id) {
   const datum = datumEl ? datumEl.value.trim() : "";
   if (!naam) { showToast("Vul eerst je naam in"); naamEl && naamEl.focus(); return; }
   if (!datum) { showToast("Vul eerst de datum in"); datumEl && datumEl.focus(); return; }
+  if (_werkbon.done[id]) return; // al gedaan — voorkomt dubbele tap
   const action = _werkbon.action || "ok";
-  try {
-    await setStatus(id, action, naam, datum);
-    _werkbon.done[id] = action;
-    _wbSave();
-    _wbRenderChecklist();
-  } catch (e) {
-    console.warn("Werkbon-actie mislukt:", e);
-  }
+  // Optimistisch updaten zodat snelle taps niet hetzelfde item twee keer
+  // afvuren tijdens netwerk-delay. setStatus gooit zelf nooit (queue bij
+  // offline) dus rollback is niet nodig.
+  _werkbon.done[id] = action;
+  _wbSave();
+  _wbRenderChecklist();
+  await setStatus(id, action, naam, datum);
 }
 
 function werkbonFinalize() {
