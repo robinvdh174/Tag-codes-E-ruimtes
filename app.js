@@ -1732,7 +1732,6 @@ function unlockApp() {
 }
 
 // ============================================================
-// ============================================================
 // BON SCANNEN (OCR via Tesseract.js, lazy-loaded)
 // ============================================================
 // Foto wordt enkel in werkgeheugen verwerkt en daarna actief
@@ -1740,7 +1739,6 @@ function unlockApp() {
 
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 let _tesseractLoadPromise = null;
-let _tesseractWorker = null;
 
 function _loadTesseract() {
   if (_tesseractLoadPromise) return _tesseractLoadPromise;
@@ -1828,55 +1826,75 @@ async function onScanFileChosen(ev) {
 // Parse de OCR-tekst van een Sappi werkbon. We zoeken naar de labels
 // "Tag-code E", "Tag-code M", "machine" en "omschrijving" en pakken
 // de tekst er vlak achter (of op de volgende regel als de waarde in
-// een tabelcel staat).
+// een tabelcel staat — mits die volgende regel zelf geen label is).
+const _BON_LABEL_RE = /^(tag.?code|machine|stopnr|volgnummer|soort|opdrachtgever|omschrijving|schakel|vergunning|onderdeel|geplande|uitvoerder|firma|slotnummer|naam|tel|datum|veiliggesteld|inbedrijf)/i;
+
 function _parseBonText(text) {
-  const cleanCode = function(s) {
-    return String(s || "").replace(/[\s|]+/g, " ").trim()
-      .replace(/^[^A-Za-z0-9]+/, "")
-      .replace(/[^A-Za-z0-9.\-_/]+$/, "");
-  };
-  // Zoekt eerste "code-achtige" token (letter+cijfers, of cijfers+letter).
+  // Vindt eerste "code-achtige" token. Tolereert OCR-spaties tussen
+  // letter-cijfer overgangen (bv. "C 404" -> "C404") zodat een
+  // misgelezen spatie geen halve code oplevert.
   const firstCodeToken = function(s) {
     if (!s) return "";
-    const m = String(s).match(/[A-Za-z0-9][A-Za-z0-9.\-_/]{1,}/);
+    const cleaned = String(s)
+      .replace(/([A-Za-z])\s+(\d)/g, "$1$2")
+      .replace(/(\d)\s+([A-Za-z])/g, "$1$2");
+    const m = cleaned.match(/[A-Za-z0-9][A-Za-z0-9.\-_/]{1,}/);
     return m ? m[0] : "";
+  };
+  // Volgende-regel-fallback alleen toelaten als die regel zelf geen
+  // ander veldlabel is (anders pakken we per ongeluk "Tag" of "Onderdeel").
+  const nextLineValue = function(lines, i) {
+    for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
+      const next = (lines[j] || "").trim();
+      if (!next) continue;
+      if (_BON_LABEL_RE.test(next)) return "";
+      return next;
+    }
+    return "";
   };
 
   const lines = String(text || "").split(/\r?\n/);
   const result = { tagE: "", tagM: "", machine: "", omschrijving: "", raw: text };
 
-  // Strategie: per regel kijken of er een label op staat. Als de
-  // waarde op dezelfde regel staat (na ":"), gebruiken we die. Anders
-  // kijken we naar de eerstvolgende niet-lege regel.
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const tagMatch = trimmed.match(/tag.?code\s*([EMem])\s*[:\-]?\s*(.*)$/i);
+    const tagMatch = trimmed.match(/tag.?code\s*([EMem])\b\s*[:\-]?\s*(.*)$/i);
     if (tagMatch) {
       const which = tagMatch[1].toUpperCase();
       let val = (tagMatch[2] || "").trim();
-      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
+      if (!val) val = nextLineValue(lines, i);
       const code = firstCodeToken(val);
-      if (which === "E" && !result.tagE) result.tagE = code;
-      if (which === "M" && !result.tagM) result.tagM = code;
+      if (code) {
+        if (which === "E" && !result.tagE) result.tagE = code;
+        if (which === "M" && !result.tagM) result.tagM = code;
+      }
       continue;
     }
 
+    // Machine: alleen op dezelfde regel lezen — tabel-layouts maken
+    // volgende-regel-fallback hier onbetrouwbaar (header-rijen).
+    // We accepteren enkel een waarde die op een typische machine-code
+    // lijkt: minstens één letter EN één cijfer en één scheidingsteken
+    // (bv. "ER-770-01" of "M427-60").
     if (/^machine\b/i.test(trimmed) && !result.machine) {
-      const m = trimmed.match(/^machine\s*[:\-]?\s*(.*)$/i);
-      let val = (m && m[1]) ? m[1].trim() : "";
-      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
-      result.machine = cleanCode(firstCodeToken(val));
+      const m = trimmed.match(/^machine\s*[:\-]?\s*(.+)$/i);
+      const val = (m && m[1]) ? m[1].trim() : "";
+      if (val) {
+        const tok = firstCodeToken(val);
+        if (tok && /[A-Za-z]/.test(tok) && /\d/.test(tok) && /[.\-_/]/.test(tok)) {
+          result.machine = tok;
+        }
+      }
       continue;
     }
 
     if (/^omschrijving\b/i.test(trimmed) && !result.omschrijving) {
-      const m = trimmed.match(/^omschrijving\s*[:\-]?\s*(.*)$/i);
-      let val = (m && m[1]) ? m[1].trim() : "";
-      if (!val && i + 1 < lines.length) val = (lines[i + 1] || "").trim();
-      result.omschrijving = val.replace(/\s+/g, " ").slice(0, 80);
+      const m = trimmed.match(/^omschrijving\s*[:\-]?\s*(.+)$/i);
+      const val = (m && m[1]) ? m[1].trim() : "";
+      if (val) result.omschrijving = val.replace(/\s+/g, " ").slice(0, 80);
     }
   }
   return result;
