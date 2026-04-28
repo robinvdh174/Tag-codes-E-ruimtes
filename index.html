@@ -60,7 +60,10 @@
   <!-- ZOEKEN -->
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
     <input type="text" id="searchInput" placeholder="Typ kastnummer, Tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin-top:.5rem" aria-label="Zoek kasten">
-    <button type="button" class="btn-scan" onclick="openScan()" aria-label="Bon scannen met camera"><span class="scan-ico">&#128247;</span> Bon scannen</button>
+    <div class="scan-actions">
+      <button type="button" class="btn-scan" onclick="openScan()" aria-label="Eén bon scannen met camera"><span class="scan-ico">&#128247;</span> Bon scannen</button>
+      <button type="button" class="btn-werkbon" onclick="openWerkbon()" aria-label="Werkbon-stapel openen"><span class="scan-ico">&#128203;</span> Werkbon <span class="wb-count" id="wbBadge" style="display:none;">0</span></button>
+    </div>
     <div class="count">Gevonden: <b id="resultCount">0</b></div>
     <div id="searchResults" class="card-grid">
       <div class="empty">
@@ -111,6 +114,60 @@
     <button class="btn-primary" id="btnAdd" onclick="addEntry()">OPSLAAN</button>
   </div>
 </main>
+
+<!-- Werkbon-stapel modal -->
+<div class="modal-overlay" id="werkbonModal" onclick="if(event.target===this)closeWerkbon()">
+  <div class="modal" style="max-width:420px;">
+    <!-- FASE 1: bonnen verzamelen -->
+    <div id="wbPhaseScan">
+      <div class="modal-title">&#128203; Werkbon &mdash; bonnen verzamelen</div>
+      <p class="scan-help">Scan elke bon &eacute;&eacute;n voor &eacute;&eacute;n. De app groepeert de kasten automatisch per ruimte voor een effici&euml;nte route.</p>
+      <div class="form-group">
+        <label>Vergunning nr. <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label>
+        <input type="text" id="wbVergunning" placeholder="bv. MA25202" autocomplete="off" maxlength="32" oninput="werkbonSetVergunning(this.value)">
+      </div>
+      <div id="wbItemsList" class="wb-items"></div>
+      <button class="btn-primary" type="button" onclick="werkbonStartScan()" style="margin-bottom:.8rem;">&#128247; Bon scannen &amp; toevoegen</button>
+      <div class="wb-manual">
+        <label style="margin-bottom:.3rem;">Of zoek &amp; voeg handmatig toe</label>
+        <div style="position:relative;">
+          <input type="text" id="wbManualInput" placeholder="Typ tag-code..." autocomplete="off" autocorrect="off" spellcheck="false" oninput="werkbonManualInput(this.value)" onfocus="werkbonManualInput(this.value)">
+          <div id="wbManualSuggest" class="wb-manual-suggest" style="display:none;"></div>
+        </div>
+      </div>
+      <div class="modal-btns">
+        <button class="btn-cancel" type="button" onclick="closeWerkbon()">Pauze</button>
+        <button class="btn-primary" type="button" id="wbToCheckBtn" onclick="werkbonProceedToCheck()" disabled style="margin-top:0;">&rarr; Afwerken</button>
+      </div>
+    </div>
+    <!-- FASE 2: afvinken -->
+    <div id="wbPhaseCheck" style="display:none;">
+      <div class="modal-title">&#128203; Werkbon afwerken</div>
+      <div class="form-group">
+        <label>Jouw naam</label>
+        <input type="text" id="wbNaam" autocomplete="off" maxlength="50">
+      </div>
+      <div class="form-group">
+        <label>Datum</label>
+        <input type="date" id="wbDatum" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Actie per kast</label>
+        <div class="wb-action-pick" id="wbActionPick">
+          <button type="button" class="wb-action-btn active" data-action="ok" onclick="werkbonSetAction('ok')">&#9888; Veiligstellen</button>
+          <button type="button" class="wb-action-btn" data-action="losgekoppeld" onclick="werkbonSetAction('losgekoppeld')">&#9888; Losgekoppeld</button>
+          <button type="button" class="wb-action-btn" data-action="" onclick="werkbonSetAction('')">&#9889; In bedrijf</button>
+        </div>
+      </div>
+      <div class="wb-progress" id="wbProgress">0 / 0 &#10004;</div>
+      <div id="wbCheckList" class="wb-checklist"></div>
+      <div class="modal-btns">
+        <button class="btn-cancel" type="button" onclick="werkbonBackToScan()">&larr; Terug</button>
+        <button class="btn-primary" type="button" onclick="werkbonFinalize()" style="margin-top:0;">Werkbon afsluiten</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Bon-scan modal -->
 <div class="modal-overlay" id="scanModal" onclick="if(event.target===this)closeScan()">
