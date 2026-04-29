@@ -1749,9 +1749,15 @@ function _loadTesseract() {
     s.async = true;
     s.onload = function() {
       if (typeof Tesseract !== "undefined") resolve(window.Tesseract);
-      else reject(new Error("Tesseract niet beschikbaar na laden"));
+      else { _tesseractLoadPromise = null; reject(new Error("Tesseract niet beschikbaar na laden")); }
     };
-    s.onerror = function() { reject(new Error("Kon scan-bibliotheek niet laden (geen internet?)")); };
+    s.onerror = function() {
+      // Reset zodat een volgende poging (bv. nadat het toestel weer
+      // online is) opnieuw kan proberen i.p.v. de gecachete rejection
+      // te krijgen.
+      _tesseractLoadPromise = null;
+      reject(new Error("Kon scan-bibliotheek niet laden (geen internet?)"));
+    };
     document.head.appendChild(s);
   });
   return _tesseractLoadPromise;
@@ -1770,6 +1776,9 @@ function closeScan() {
   m.classList.remove("open");
   _resetScanUI();
   _scanMode = "single";
+  // Eventuele lopende OCR ongeldig verklaren zodat late callbacks
+  // niet meer in de UI schrijven.
+  _scanToken++;
 }
 
 function _resetScanUI() {
@@ -1788,9 +1797,40 @@ function _setScanProgress(msg) {
   if (el) el.textContent = msg;
 }
 
+// Maximum bestandsgrootte voor een gescande bon. Moderne telefoons
+// maken foto's van 5-10 MB; we laten ruimte voor RAW-gevallen maar
+// blokkeren echt buitenproportionele bestanden om OOM te voorkomen op
+// oudere toestellen.
+const _SCAN_MAX_BYTES = 15 * 1024 * 1024; // 15 MB
+
+// Token dat ophoogt bij elke nieuwe scan. Late OCR-callbacks van een
+// geannuleerde scan negeren we door het token te vergelijken — voorkomt
+// dat een afgesloten scan-modal alsnog resultaten of progress toont.
+let _scanToken = 0;
+
 async function onScanFileChosen(ev) {
   const file = ev && ev.target && ev.target.files && ev.target.files[0];
   if (!file) return;
+
+  // Bestandsvalidatie — accept="image/*" is slechts een hint, gebruikers
+  // kunnen via "alle bestanden" alsnog een PDF/HEIC/iets anders kiezen.
+  if (!file.type || file.type.indexOf("image/") !== 0) {
+    _showScanError("Dit is geen afbeelding. Maak een foto of kies een JPG/PNG.");
+    const inp = document.getElementById("scanFileInput");
+    if (inp) inp.value = "";
+    return;
+  }
+  if (file.size > _SCAN_MAX_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    _showScanError("Foto is te groot (" + mb + " MB). Maximaal 15 MB.");
+    const inp = document.getElementById("scanFileInput");
+    if (inp) inp.value = "";
+    return;
+  }
+
+  const myToken = ++_scanToken;
+  const isAlive = function() { return _scanToken === myToken; };
+
   const init = document.getElementById("scanInitial");
   const proc = document.getElementById("scanProcessing");
   const res = document.getElementById("scanResult");
@@ -1802,22 +1842,27 @@ async function onScanFileChosen(ev) {
   let imgUrl = null;
   try {
     await _loadTesseract();
+    if (!isAlive()) return; // modal ondertussen gesloten
     _setScanProgress("Bon analyseren…");
     imgUrl = URL.createObjectURL(file);
     const result = await Tesseract.recognize(imgUrl, "eng", {
       logger: function(p) {
+        if (!isAlive()) return;
         if (p && p.status === "recognizing text" && typeof p.progress === "number") {
           _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
         }
       }
     });
+    if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
   } catch (err) {
+    if (!isAlive()) return;
     console.warn("Scan mislukt:", err);
     _showScanError(err && err.message ? err.message : "Onbekende fout");
   } finally {
-    // Foto actief weggooien — geen verwijzing meer naar de blob.
+    // Foto altijd actief weggooien — ook bij annulering of fout, geen
+    // verwijzing meer naar de blob in geheugen.
     if (imgUrl) { try { URL.revokeObjectURL(imgUrl); } catch (e) {} }
     const inp = document.getElementById("scanFileInput");
     if (inp) inp.value = "";

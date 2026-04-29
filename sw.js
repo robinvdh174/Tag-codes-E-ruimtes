@@ -1,4 +1,4 @@
-const CACHE_NAME = "ekast-v16";
+const CACHE_NAME = "ekast-v17";
 const ASSETS = [
   "./index.html",
   "./style.css",
