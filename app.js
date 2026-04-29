@@ -1944,12 +1944,17 @@ function _showScanResult(parsed) {
   hint.textContent = "Klopt de code niet? Tap op het veld om aan te passen.";
   res.appendChild(hint);
 
-  // Fallback-chips ook tonen als de gelezen code niet bestaat.
-  const primary = hasE ? parsed.tagE : parsed.tagM;
-  if (!_codeExistsInData(primary)) {
+  // Warning + fallback-chips alleen tonen als geen enkele gelezen
+  // code in de database voorkomt — dan staat de gebruiker écht voor
+  // een blocker. Als minstens één matcht, kan hij gewoon doorgaan.
+  const codes = [];
+  if (hasE) codes.push(parsed.tagE);
+  if (hasM) codes.push(parsed.tagM);
+  const anyExists = codes.some(_codeExistsInData);
+  if (codes.length > 0 && !anyExists) {
     const warn = document.createElement("div");
     warn.className = "scan-warn";
-    warn.textContent = "⚠ “" + primary + "” komt niet voor in de database.";
+    warn.textContent = "⚠ Geen van de gelezen codes (" + codes.join(", ") + ") komt voor in de database.";
     res.appendChild(warn);
     _appendFallbackHints(res, parsed);
   }
@@ -1998,6 +2003,12 @@ function _appendCodeRow(parent, label, code, isPrimary) {
   inputWrap.appendChild(input);
   row.appendChild(inputWrap);
 
+  // Live validatie-indicator: groen/rood vinkje rechts van het veld
+  // dat real-time toont of de getypte code in de database bestaat.
+  const status = document.createElement("div");
+  status.className = "scan-row-status";
+  inputWrap.appendChild(status);
+
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn-primary scan-search-btn";
@@ -2024,9 +2035,56 @@ function _appendCodeRow(parent, label, code, isPrimary) {
 
   parent.appendChild(row);
 
+  // Refreshes status-indicator + scan-warn op elke wijziging zodat de
+  // gebruiker meteen ziet of zijn correctie van een OCR-fout aansluit.
+  const refreshStatus = function() {
+    const v = input.value.trim();
+    if (!v) {
+      status.className = "scan-row-status";
+      status.textContent = "";
+    } else if (_codeExistsInData(v)) {
+      status.className = "scan-row-status ok";
+      status.textContent = "✓";
+    } else {
+      status.className = "scan-row-status warn";
+      status.textContent = "?";
+    }
+    _refreshScanResultWarning();
+  };
+  input.addEventListener("input", refreshStatus);
+  refreshStatus();
+
   // Eerste/primaire krijgt focus zodat de gebruiker meteen kan corrigeren of bevestigen.
   if (isPrimary) {
     setTimeout(function() { try { input.focus(); input.select(); } catch (e) {} }, 50);
+  }
+}
+
+// Werkt de "niet in database"-waarschuwing in de scan-result bij
+// op basis van ALLE tag-code-inputs. Zodra de gebruiker minstens één
+// matchende code heeft (na correctie van een OCR-fout), verdwijnt de
+// waarschuwing automatisch.
+function _refreshScanResultWarning() {
+  const res = document.getElementById("scanResult");
+  if (!res) return;
+  const inputs = res.querySelectorAll(".scan-edit-input");
+  const warn = res.querySelector(".scan-warn");
+  if (!warn || inputs.length === 0) return;
+  const codes = [];
+  for (let i = 0; i < inputs.length; i++) {
+    const v = inputs[i].value.trim();
+    if (v) codes.push(v);
+  }
+  if (codes.length === 0) {
+    warn.style.display = "none";
+    return;
+  }
+  const anyExists = codes.some(_codeExistsInData);
+  if (anyExists) {
+    warn.style.display = "none";
+  } else {
+    warn.style.display = "";
+    warn.textContent = "⚠ Geen van de codes (" + codes.join(", ") + ") komt voor in de database.";
   }
 }
 
@@ -2045,11 +2103,12 @@ function _appendInfoRow(parent, label, val) {
 }
 
 function _appendFallbackHints(parent, parsed) {
+  const isWerkbon = _scanMode === "werkbon";
   const wrap = document.createElement("div");
   wrap.className = "scan-fallback";
   const lbl = document.createElement("div");
   lbl.className = "scan-row-label";
-  lbl.textContent = "Zoek met:";
+  lbl.textContent = isWerkbon ? "Of zoek handmatig met:" : "Zoek met:";
   wrap.appendChild(lbl);
   const row = document.createElement("div");
   row.className = "suggestions-row";
@@ -2126,6 +2185,11 @@ const _WB_DEFAULT = function() { return { ids: [], vergunning: "", action: "ok",
 let _werkbon = _WB_DEFAULT();
 let _scanMode = "single"; // "single" | "werkbon"
 
+// Geldige actie-waardes voor setStatus: "ok" (veiligstellen),
+// "losgekoppeld", of "" (in bedrijf). Andere waardes worden afgewezen
+// om corruptie via gemanipuleerde localStorage te voorkomen.
+const _WB_VALID_ACTIONS = ["ok", "losgekoppeld", ""];
+
 function _wbLoad() {
   try {
     const raw = localStorage.getItem(_WB_KEY);
@@ -2133,7 +2197,16 @@ function _wbLoad() {
       const obj = JSON.parse(raw);
       if (obj && Array.isArray(obj.ids)) {
         _werkbon = Object.assign(_WB_DEFAULT(), obj);
-        if (!_werkbon.done || typeof _werkbon.done !== "object") _werkbon.done = {};
+        // Sanity-check elk veld zodat een corrupte storage niet het
+        // hele werkbon-mechanisme breekt.
+        _werkbon.ids = _werkbon.ids.filter(function(id) {
+          return typeof id === "string" && id.length > 0;
+        });
+        if (typeof _werkbon.vergunning !== "string") _werkbon.vergunning = "";
+        if (_WB_VALID_ACTIONS.indexOf(_werkbon.action) === -1) _werkbon.action = "ok";
+        if (!_werkbon.done || typeof _werkbon.done !== "object" || Array.isArray(_werkbon.done)) {
+          _werkbon.done = {};
+        }
       }
     }
   } catch (e) { console.warn("Werkbon laden mislukt:", e); }
@@ -2261,6 +2334,7 @@ function werkbonBackToScan() {
 }
 
 function werkbonSetAction(action) {
+  if (_WB_VALID_ACTIONS.indexOf(action) === -1) return;
   _werkbon.action = action;
   _wbSave();
   _wbHighlightAction(action);
@@ -2293,21 +2367,56 @@ async function werkbonApplyOne(id) {
   await setStatus(id, action, naam, datum);
 }
 
+let _werkbonFinalizing = false;
 function werkbonFinalize() {
+  if (_werkbonFinalizing) return; // dubbele tap onderdrukken
   const items = _wbResolveItems();
   const total = items.length;
   const doneCount = items.filter(function(it) { return _werkbon.done[it.id]; }).length;
   if (doneCount < total) {
-    if (!confirm("Werkbon is nog niet volledig (" + doneCount + "/" + total + " gedaan). Toch afsluiten?")) return;
+    showConfirm(
+      "Werkbon is nog niet volledig (" + doneCount + "/" + total + " gedaan). Toch afsluiten?",
+      function() { _werkbonFinalizeNow(items, total, doneCount); }
+    );
+    return;
   }
-  // Optionele audit-log onder vergunningsnummer
-  if (_werkbon.vergunning && doneCount > 0) {
-    try { logAction("Werkbon afgesloten — " + doneCount + "/" + total, _werkbon.vergunning, "", "Logboek Status"); } catch (e) {}
+  _werkbonFinalizeNow(items, total, doneCount);
+}
+
+function _werkbonFinalizeNow(items, total, doneCount) {
+  _werkbonFinalizing = true;
+  try {
+    if (_werkbon.vergunning && doneCount > 0) {
+      try { logAction("Werkbon afgesloten — " + doneCount + "/" + total, _werkbon.vergunning, "", "Logboek Status"); } catch (e) {}
+    }
+    _werkbon = _WB_DEFAULT();
+    _wbSave();
+    closeWerkbon();
+    showToast("Werkbon afgesloten");
+  } finally {
+    setTimeout(function() { _werkbonFinalizing = false; }, 800);
   }
-  _werkbon = _WB_DEFAULT();
-  _wbSave();
-  closeWerkbon();
-  showToast("Werkbon afgesloten");
+}
+
+function werkbonClearAll() {
+  if ((_werkbon.ids || []).length === 0) { closeWerkbon(); return; }
+  showConfirm(
+    "Werkbon leegmaken? Alle " + _werkbon.ids.length + " toegevoegde kasten worden uit de werkbon gehaald (statuswijzigingen die je al hebt doorgevoerd blijven bewaard).",
+    function() {
+      _werkbon = _WB_DEFAULT();
+      _wbSave();
+      _wbRenderItems();
+      _wbRenderChecklist();
+      // Reset naar fase 1
+      const p1 = document.getElementById("wbPhaseScan");
+      const p2 = document.getElementById("wbPhaseCheck");
+      if (p1) p1.style.display = "";
+      if (p2) p2.style.display = "none";
+      const verg = document.getElementById("wbVergunning");
+      if (verg) verg.value = "";
+      showToast("Werkbon leeggemaakt");
+    }
+  );
 }
 
 // ---------- Render: lijst van bonnen in fase 1 ----------
@@ -2485,11 +2594,15 @@ function _wbManualSearchNow(value) {
     m.textContent = (it.location || "?") + (it.note ? " · " + it.note : "");
     opt.appendChild(c);
     opt.appendChild(m);
+    // mousedown vuurt voor input.blur — preventDefault zorgt dat de
+    // input z'n focus behoudt zodat blur-event de dropdown niet
+    // dichttrekt voor click verwerkt is.
+    opt.addEventListener("mousedown", function(e) { e.preventDefault(); });
     opt.onclick = (function(id) {
       return function() {
         werkbonAddItemById(id);
         const inp = document.getElementById("wbManualInput");
-        if (inp) inp.value = "";
+        if (inp) { inp.value = ""; try { inp.focus(); } catch (e) {} }
         _wbHideManualSuggest();
         _wbRenderItems();
       };
@@ -2502,6 +2615,14 @@ function _wbManualSearchNow(value) {
 function _wbHideManualSuggest() {
   const wrap = document.getElementById("wbManualSuggest");
   if (wrap) { wrap.style.display = "none"; wrap.textContent = ""; }
+}
+
+// Sluit de suggesties bij verlies van focus, met kleine delay zodat
+// een tap op een suggestie nog kan landen voor we ze verbergen.
+let _wbBlurTimer = null;
+function werkbonManualBlur() {
+  clearTimeout(_wbBlurTimer);
+  _wbBlurTimer = setTimeout(function() { _wbHideManualSuggest(); }, 180);
 }
 
 // ============================================================

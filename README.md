@@ -3,10 +3,19 @@
 Mobiele web-app voor Sappi om elektrische verdeelkasten te zoeken, beheren en de status bij te houden. Synchroniseert met Google Sheets via Google Apps Script.
 
 ## Functies
-- Kasten zoeken op tagcode, locatie of notitie
+- Kasten zoeken op tagcode, locatie of notitie (genormaliseerd matchen — `C404`, `C-404`, `c 404` vinden allemaal hetzelfde)
+- "Bedoelde je…?"-suggesties bij typfouten
+- Bon scannen via camera + OCR (Tag-code E/M wordt automatisch gelezen, foto wordt nergens bewaard)
+- Werkbon-modus: meerdere bonnen verzamelen, gegroepeerd per ruimte, in één sessie afvinken
 - Status bijhouden: In bedrijf / Veiliggesteld / Losgekoppeld
 - Offline beschikbaar (PWA met Service Worker)
 - Audit-log van alle wijzigingen
+
+## Tests draaien
+```bash
+node tests/run.js
+```
+De testsuite valideert de OCR-bonparser en de werkbon-state-logica. Voer hem uit voor je wijzigingen pusht.
 
 ## Hoe wijzigingen doorvoeren (git workflow)
 
