@@ -16,6 +16,12 @@ const DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 const SYNC_INTERVAL_MS = 30000;
 
+// App-versie wordt getoond in foutmeldingen en in de console bij start.
+// Bump dit bij elke release zodat we via screenshots kunnen verifiëren
+// of een gebruiker echt op de nieuwste versie zit (i.p.v. een
+// gecachete oude SW-versie).
+const APP_VERSION = "v20-self-host";
+
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
 // Laat leeg ("") als de naam al duidelijk genoeg is.
@@ -1873,16 +1879,20 @@ async function onScanFileChosen(ev) {
   } catch (err) {
     if (!isAlive()) return;
     console.warn("Scan mislukt:", err);
-    // "Load failed" is iOS Safari's generieke netwerkfout. Vertalen
-    // naar iets bruikbaars voor de gebruiker zodat hij weet dat het
-    // niet aan de bon ligt maar aan de download.
+    // "Load failed" / "Failed to fetch" zijn cryptische netwerkfouten
+    // van iOS Safari resp. Chrome. Vertalen naar iets bruikbaars voor
+    // de gebruiker zodat hij weet dat het niet aan de bon ligt.
     let msg = err && err.message ? err.message : "Onbekende fout";
+    const orig = msg;
     const lower = msg.toLowerCase();
     if (lower.indexOf("load failed") !== -1 ||
         lower.indexOf("networkerror") !== -1 ||
         lower.indexOf("failed to fetch") !== -1) {
-      msg = "Kon de scan-bibliotheek niet ophalen. Check of je internet hebt en probeer opnieuw. (De eerste keer is ~5 MB download nodig — daarna werkt scannen ook offline.)";
+      msg = "Kon de scan-bibliotheek niet ophalen. Mogelijke oorzaken: vendor-bestanden niet bereikbaar (404), gecachete oude app-versie, of geen netwerk.";
     }
+    // Versie-info zodat we via een screenshot kunnen verifiëren welke
+    // app-build actief is. Plus de raw-error voor diepere diagnose.
+    msg += "\n\n[" + APP_VERSION + "] " + orig;
     _showScanError(msg);
   } finally {
     // Foto altijd actief weggooien — ook bij annulering of fout, geen
@@ -2042,6 +2052,7 @@ function _showScanError(msg) {
   res.appendChild(t);
   const p = document.createElement("p");
   p.className = "scan-help";
+  p.style.whiteSpace = "pre-wrap"; // newlines in msg correct weergeven
   p.textContent = msg;
   res.appendChild(p);
   const retry = document.createElement("button");
@@ -2699,6 +2710,12 @@ function werkbonManualBlur() {
 // ============================================================
 _wbLoad();
 checkPin();
+
+// Console-logging van de actieve app-versie zodat developer-tools
+// (Safari Web Inspector / Chrome DevTools) meteen tonen welke build
+// een gebruiker draait — ook handig om te checken of een update echt
+// is doorgekomen op een telefoon.
+console.info("E-Kast Zoeker — versie " + APP_VERSION);
 
 // Service Worker registreren voor offline ondersteuning
 if ("serviceWorker" in navigator) {
