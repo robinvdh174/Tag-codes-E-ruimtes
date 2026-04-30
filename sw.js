@@ -1,4 +1,4 @@
-const CACHE_NAME = "ekast-v19";
+const CACHE_NAME = "ekast-v20";
 const ASSETS = [
   "./index.html",
   "./style.css",
@@ -49,9 +49,17 @@ self.addEventListener("fetch", function(e) {
   try { url = new URL(e.request.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;
 
-  // Same-origin: network-first met cache-fallback (zoals voorheen).
+  // Voor de hoofd-app-bestanden (HTML/JS/CSS/manifest) bypassen we
+  // de browser HTTP-cache zodat updates altijd doorkomen. Anders kan
+  // iOS Safari een max-age=600 cache-versie blijven serveren waardoor
+  // gebruikers urenlang op een oude app.js hangen na een nieuwe deploy.
+  const path = url.pathname;
+  const isAppFile = /\.(html|js|css|json)$/.test(path) || path === "/" || path.endsWith("/Tag-codes-E-ruimtes/");
+  const fetchOpts = isAppFile ? { cache: "reload" } : {};
+
+  // Same-origin: network-first met cache-fallback.
   e.respondWith(
-    fetch(e.request).then(function(response) {
+    fetch(e.request, fetchOpts).then(function(response) {
       if (response && response.ok) {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(function(cache) {
