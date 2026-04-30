@@ -1,4 +1,4 @@
-const CACHE_NAME = "ekast-v17";
+const CACHE_NAME = "ekast-v18";
 const ASSETS = [
   "./index.html",
   "./style.css",
@@ -33,8 +33,19 @@ self.addEventListener("activate", function(e) {
 });
 
 self.addEventListener("fetch", function(e) {
-  if (e.request.url.includes("script.google.com")) return;
+  // Apps Script sync-API: laat de browser zelf afhandelen (geen cache).
+  if (e.request.url.indexOf("script.google.com") !== -1) return;
+  if (e.request.url.indexOf("script.googleusercontent.com") !== -1) return;
 
+  // Cross-origin scripts en data (Tesseract.js + tessdata) NIET via de
+  // SW laten lopen. iOS Safari heeft known issues met cross-origin
+  // opaque responses + cache.put waardoor 'Load failed' optreedt.
+  // De browser-eigen HTTP-cache neemt het over voor herhaalde loads.
+  let url;
+  try { url = new URL(e.request.url); } catch (err) { return; }
+  if (url.origin !== self.location.origin) return;
+
+  // Same-origin: network-first met cache-fallback (zoals voorheen).
   e.respondWith(
     fetch(e.request).then(function(response) {
       if (response && response.ok) {

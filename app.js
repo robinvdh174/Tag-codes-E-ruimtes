@@ -1859,7 +1859,17 @@ async function onScanFileChosen(ev) {
   } catch (err) {
     if (!isAlive()) return;
     console.warn("Scan mislukt:", err);
-    _showScanError(err && err.message ? err.message : "Onbekende fout");
+    // "Load failed" is iOS Safari's generieke netwerkfout. Vertalen
+    // naar iets bruikbaars voor de gebruiker zodat hij weet dat het
+    // niet aan de bon ligt maar aan de download.
+    let msg = err && err.message ? err.message : "Onbekende fout";
+    const lower = msg.toLowerCase();
+    if (lower.indexOf("load failed") !== -1 ||
+        lower.indexOf("networkerror") !== -1 ||
+        lower.indexOf("failed to fetch") !== -1) {
+      msg = "Kon de scan-bibliotheek niet ophalen. Check of je internet hebt en probeer opnieuw. (De eerste keer is ~5 MB download nodig — daarna werkt scannen ook offline.)";
+    }
+    _showScanError(msg);
   } finally {
     // Foto altijd actief weggooien — ook bij annulering of fout, geen
     // verwijzing meer naar de blob in geheugen.
