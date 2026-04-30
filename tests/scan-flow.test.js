@@ -77,6 +77,8 @@ global.Tesseract = {
 
 // _loadTesseract zelf test ik niet hier (vereist DOM). Ik mock 'em.
 global._loadTesseract = function() { return Promise.resolve(global.Tesseract); };
+// Constants die buiten ons slice-block gedefinieerd zijn
+global.TESSERACT_VENDOR_DIR = "./vendor/tesseract/";
 
 // Slice de scan-flow code
 const block = sliceBlock("// Maximum bestandsgrootte voor een gescande bon", "// Parse de OCR-tekst");

@@ -1732,12 +1732,17 @@ function unlockApp() {
 }
 
 // ============================================================
-// BON SCANNEN (OCR via Tesseract.js, lazy-loaded)
+// BON SCANNEN (OCR via Tesseract.js, lazy-loaded, self-hosted)
 // ============================================================
 // Foto wordt enkel in werkgeheugen verwerkt en daarna actief
 // weggegooid — niet gecached, niet gesynced, nergens opgeslagen.
+//
+// Tesseract.js wordt vanuit ./vendor/tesseract/ geserveerd om CDN-
+// afhankelijkheden (en bijbehorende firewall/CSP-issues) te elimineren.
+// Eerste scan downloadt ~10-15 MB lokaal-cacheable; daarna offline.
 
-const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const TESSERACT_LOCAL = "./vendor/tesseract/tesseract.min.js";
+const TESSERACT_VENDOR_DIR = "./vendor/tesseract/";
 let _tesseractLoadPromise = null;
 
 function _loadTesseract() {
@@ -1745,18 +1750,18 @@ function _loadTesseract() {
   _tesseractLoadPromise = new Promise(function(resolve, reject) {
     if (typeof Tesseract !== "undefined") { resolve(window.Tesseract); return; }
     const s = document.createElement("script");
-    s.src = TESSERACT_CDN;
+    s.src = TESSERACT_LOCAL;
     s.async = true;
     s.onload = function() {
       if (typeof Tesseract !== "undefined") resolve(window.Tesseract);
       else { _tesseractLoadPromise = null; reject(new Error("Tesseract niet beschikbaar na laden")); }
     };
     s.onerror = function() {
-      // Reset zodat een volgende poging (bv. nadat het toestel weer
-      // online is) opnieuw kan proberen i.p.v. de gecachete rejection
-      // te krijgen.
+      // Reset zodat een volgende poging (bv. nadat de SW de assets
+      // heeft gecached) opnieuw kan proberen i.p.v. de gecachete
+      // rejection te krijgen.
       _tesseractLoadPromise = null;
-      reject(new Error("Kon scan-bibliotheek niet laden (geen internet?)"));
+      reject(new Error("Kon scan-bibliotheek niet laden — herlaad de app en probeer opnieuw."));
     };
     document.head.appendChild(s);
   });
@@ -1845,11 +1850,20 @@ async function onScanFileChosen(ev) {
     if (!isAlive()) return; // modal ondertussen gesloten
     _setScanProgress("Bon analyseren…");
     imgUrl = URL.createObjectURL(file);
+    // Lokale paden voor worker, core (wasm) en taaldata. Tesseract
+    // kiest zelf simd-lstm vs lstm op basis van browser-support.
     const result = await Tesseract.recognize(imgUrl, "eng", {
+      workerPath: TESSERACT_VENDOR_DIR + "worker.min.js",
+      corePath: TESSERACT_VENDOR_DIR,
+      langPath: TESSERACT_VENDOR_DIR,
       logger: function(p) {
         if (!isAlive()) return;
         if (p && p.status === "recognizing text" && typeof p.progress === "number") {
           _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
+        } else if (p && p.status) {
+          // Toon ook andere stadia (loading core, initializing api)
+          // zodat de gebruiker ziet dat er iets gebeurt.
+          _setScanProgress(p.status);
         }
       }
     });
@@ -1859,7 +1873,17 @@ async function onScanFileChosen(ev) {
   } catch (err) {
     if (!isAlive()) return;
     console.warn("Scan mislukt:", err);
-    _showScanError(err && err.message ? err.message : "Onbekende fout");
+    // "Load failed" is iOS Safari's generieke netwerkfout. Vertalen
+    // naar iets bruikbaars voor de gebruiker zodat hij weet dat het
+    // niet aan de bon ligt maar aan de download.
+    let msg = err && err.message ? err.message : "Onbekende fout";
+    const lower = msg.toLowerCase();
+    if (lower.indexOf("load failed") !== -1 ||
+        lower.indexOf("networkerror") !== -1 ||
+        lower.indexOf("failed to fetch") !== -1) {
+      msg = "Kon de scan-bibliotheek niet ophalen. Check of je internet hebt en probeer opnieuw. (De eerste keer is ~5 MB download nodig — daarna werkt scannen ook offline.)";
+    }
+    _showScanError(msg);
   } finally {
     // Foto altijd actief weggooien — ook bij annulering of fout, geen
     // verwijzing meer naar de blob in geheugen.
