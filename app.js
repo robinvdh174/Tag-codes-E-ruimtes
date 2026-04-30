@@ -2705,5 +2705,22 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(function(e) {
     console.warn("Service Worker registratie mislukt:", e);
   });
+
+  // Bij elke pageload: vraag de actieve SW een update-check te doen.
+  // Anders pickt iOS Safari nieuwe SW-versies pas op na 24u (max-age).
+  navigator.serviceWorker.ready.then(function(reg) {
+    try { reg.update(); } catch (e) {}
+  });
+
+  // Wanneer een nieuwe SW de controle overneemt (skipWaiting + claim),
+  // herladen we automatisch zodat de page de nieuwe app.js krijgt.
+  // Eén keer per pageload — anders krijg je een refresh-loop.
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", function() {
+    if (_swReloaded) return;
+    _swReloaded = true;
+    console.info("Nieuwe app-versie geactiveerd — herladen…");
+    window.location.reload();
+  });
 }
 
