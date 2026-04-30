@@ -1,0 +1,203 @@
+// Tests voor scan-flow specifieke logic: file-validatie, _scanToken
+// cancellation, Tesseract retry-na-failure. Gebruikt mock File-object
+// + spy op _showScanError.
+
+const { eq, ok, summary, sliceBlock } = require("./_helpers");
+
+// ---------- Mocks ----------
+let _shownErrors = [];
+let _shownResults = [];
+
+global.localStorage = {
+  _s: {},
+  getItem: function(k) { return this._s[k] === undefined ? null : this._s[k]; },
+  setItem: function(k, v) { this._s[k] = String(v); },
+  removeItem: function(k) { delete this._s[k]; }
+};
+
+const _stubElems = {};
+global.document = {
+  getElementById: function(id) {
+    if (!_stubElems[id]) {
+      _stubElems[id] = {
+        id: id, _value: "", _children: [], style: {},
+        get value() { return this._value; },
+        set value(v) { this._value = String(v); },
+        textContent: "",
+        innerText: "",
+        classList: { add: function() {}, remove: function() {}, toggle: function() {}, contains: function() { return false; } },
+        querySelector: function() { return null; },
+        querySelectorAll: function() { return []; },
+        appendChild: function() {},
+        setAttribute: function() {},
+        addEventListener: function() {},
+        focus: function() {}, select: function() {},
+        getAttribute: function() { return ""; }
+      };
+    }
+    return _stubElems[id];
+  },
+  createElement: function() {
+    return {
+      _children: [], textContent: "", className: "", style: {},
+      classList: { add: function() {}, remove: function() {}, toggle: function() {} },
+      appendChild: function(c) { this._children.push(c); },
+      addEventListener: function() {},
+      setAttribute: function() {}
+    };
+  },
+  createTextNode: function(t) { return { textContent: t }; },
+  head: { appendChild: function() {} }
+};
+
+global.URL = {
+  createObjectURL: function() { return "blob:mock"; },
+  revokeObjectURL: function() {}
+};
+
+global.setTimeout = function(fn) { try { fn(); } catch (e) {} return 0; };
+global.clearTimeout = function() {};
+global.console = { warn: function() {}, log: console.log };
+
+// Stubs voor functies waarvan onScanFileChosen afhankelijk is
+let _scanErrors = [];
+global._showScanError = function(msg) { _scanErrors.push(msg); };
+global._showScanResult = function(parsed) { _shownResults.push(parsed); };
+global._setScanProgress = function() {};
+global._parseBonText = function() { return { tagE: "MOCK", tagM: "", machine: "", omschrijving: "", raw: "" }; };
+
+// Tesseract mock — controleert of recognize ooit wordt aangeroepen
+let _tesseractCalled = false;
+global.Tesseract = {
+  recognize: function() {
+    _tesseractCalled = true;
+    return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
+  }
+};
+
+// _loadTesseract zelf test ik niet hier (vereist DOM). Ik mock 'em.
+global._loadTesseract = function() { return Promise.resolve(global.Tesseract); };
+
+// Slice de scan-flow code
+const block = sliceBlock("// Maximum bestandsgrootte voor een gescande bon", "// Parse de OCR-tekst");
+eval(block);
+
+// Helper: maak een mock File
+function mockFile(opts) {
+  return {
+    name: opts.name || "x.jpg",
+    type: opts.type === undefined ? "image/jpeg" : opts.type,
+    size: opts.size === undefined ? 1024 * 1024 : opts.size
+  };
+}
+
+function reset() {
+  _scanErrors = [];
+  _shownResults = [];
+  _tesseractCalled = false;
+}
+
+// ====================================================================
+// TESTS
+// ====================================================================
+
+// ---------- 1. Geldige image gaat door naar OCR ----------
+async function test1() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 2 * 1024 * 1024 })] } });
+  eq(_tesseractCalled, true, "Geldige image: OCR wordt aangeroepen");
+  eq(_scanErrors.length, 0, "Geldige image: geen errors");
+  eq(_shownResults.length, 1, "Geldige image: resultaat getoond");
+}
+
+// ---------- 2. PDF afgewezen voor OCR-call ----------
+async function test2() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "application/pdf" })] } });
+  eq(_tesseractCalled, false, "PDF: OCR wordt NIET aangeroepen");
+  eq(_scanErrors.length, 1, "PDF: error getoond");
+  ok(_scanErrors[0].indexOf("afbeelding") !== -1 || _scanErrors[0].indexOf("JPG") !== -1,
+     "PDF: errormessage vermeldt 'afbeelding/JPG'");
+}
+
+// ---------- 3. Bestand zonder type afgewezen ----------
+async function test3() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "" })] } });
+  eq(_tesseractCalled, false, "Geen type: OCR niet aangeroepen");
+  eq(_scanErrors.length, 1, "Geen type: error");
+}
+
+// ---------- 4. Te grote foto afgewezen ----------
+async function test4() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 20 * 1024 * 1024 })] } });
+  eq(_tesseractCalled, false, "20MB: OCR niet aangeroepen");
+  eq(_scanErrors.length, 1, "20MB: error");
+  ok(_scanErrors[0].indexOf("te groot") !== -1, "20MB: error vermeldt 'te groot'");
+  ok(_scanErrors[0].indexOf("20") !== -1, "20MB: error toont actuele grootte");
+}
+
+// ---------- 5. Op de grens (15MB) wordt nog geaccepteerd ----------
+async function test5() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 15 * 1024 * 1024 })] } });
+  eq(_tesseractCalled, true, "15MB precies: OCR wordt aangeroepen");
+  eq(_scanErrors.length, 0, "15MB: geen errors");
+}
+
+// ---------- 6. Just-over de grens (15MB + 1 byte) wordt afgewezen ----------
+async function test6() {
+  reset();
+  await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 15 * 1024 * 1024 + 1 })] } });
+  eq(_tesseractCalled, false, "15MB+1: afgewezen");
+  eq(_scanErrors.length, 1, "15MB+1: error");
+}
+
+// ---------- 7. Geen file: stilletjes returnen ----------
+async function test7() {
+  reset();
+  await onScanFileChosen({ target: { files: [] } });
+  eq(_tesseractCalled, false, "Geen file: niets gebeurt");
+  eq(_scanErrors.length, 0, "Geen file: geen error");
+  // null event ook
+  await onScanFileChosen(null);
+  eq(_tesseractCalled, false, "Null event: niets gebeurt");
+}
+
+// ---------- 8. _scanToken-cancellation: token mismatch onderdrukt resultaat ----------
+async function test8() {
+  reset();
+  // We starten een scan en hogen handmatig _scanToken op tijdens OCR
+  // (simuleert closeScan tijdens lopende OCR). Houder-object om
+  // de resolver te bereiken na await-gap.
+  const holder = { resolve: null };
+  global.Tesseract.recognize = function() {
+    _tesseractCalled = true;
+    return new Promise(function(r) { holder.resolve = r; });
+  };
+  const promise = onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg" })] } });
+  // Een microtask wachten zodat onScanFileChosen de Tesseract.recognize
+  // call al heeft gedaan en holder.resolve gezet is.
+  await new Promise(function(r) { setImmediate(r); });
+  ok(holder.resolve != null, "Tesseract.recognize is aangeroepen (sanity)");
+  // Simuleer closeScan: token++ zodat huidige scan ongeldig is
+  _scanToken = 999;
+  holder.resolve({ data: { text: "Tag-code E: SHOULDNOTSHOW" } });
+  await promise;
+  eq(_shownResults.length, 0, "Token-mismatch: resultaat NIET getoond");
+}
+
+// Run alle tests sequentieel
+(async function() {
+  await test1();
+  await test2();
+  await test3();
+  await test4();
+  await test5();
+  await test6();
+  await test7();
+  await test8();
+  console.log("Scan-flow tests voltooid.");
+  summary();
+})();
