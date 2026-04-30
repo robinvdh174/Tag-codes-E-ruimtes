@@ -1,4 +1,4 @@
-const CACHE_NAME = "ekast-v18";
+const CACHE_NAME = "ekast-v19";
 const ASSETS = [
   "./index.html",
   "./style.css",
@@ -8,6 +8,10 @@ const ASSETS = [
   "./apple-touch-icon.png",
   "./icon-512.png"
 ];
+// Tesseract.js assets worden NIET in de install-precache geplaatst
+// (zou de install met ~16 MB belasten en op trage netwerken laten
+// falen). Ze worden runtime-gecached bij de eerste scan via de
+// fetch-handler en daarna offline beschikbaar.
 
 self.addEventListener("install", function(e) {
   e.waitUntil(
