@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v21-absolute-paths";
+const APP_VERSION = "v22-preflight";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -1819,6 +1819,61 @@ const _SCAN_MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 // dat een afgesloten scan-modal alsnog resultaten of progress toont.
 let _scanToken = 0;
 
+// Pre-flight check: probeer elk Tesseract-asset op te halen voordat we
+// Tesseract.recognize starten. Tesseract's interne worker geeft bij een
+// failure een vage 'Load failed' zonder URL — wij rapporteren wél exact
+// welk bestand faalt en met welke status (bv. 404, CORS, network).
+async function _preflightTesseract(baseUrl) {
+  // We controleren de basis tesseract-files + beide WASM-varianten +
+  // de taaldata. Tesseract kiest zelf de juiste WASM (simd of niet),
+  // dus minstens één van de wasm-paren moet werken.
+  const required = [
+    { name: "worker.min.js", url: baseUrl + "worker.min.js" },
+    { name: "eng.traineddata.gz", url: baseUrl + "eng.traineddata.gz" }
+  ];
+  const wasmVariants = [
+    [
+      { name: "tesseract-core-simd-lstm.wasm.js", url: baseUrl + "tesseract-core-simd-lstm.wasm.js" },
+      { name: "tesseract-core-simd-lstm.wasm", url: baseUrl + "tesseract-core-simd-lstm.wasm" }
+    ],
+    [
+      { name: "tesseract-core-lstm.wasm.js", url: baseUrl + "tesseract-core-lstm.wasm.js" },
+      { name: "tesseract-core-lstm.wasm", url: baseUrl + "tesseract-core-lstm.wasm" }
+    ]
+  ];
+
+  const probe = async function(item) {
+    try {
+      const r = await fetch(item.url, { method: "GET", cache: "no-cache" });
+      return { name: item.name, url: item.url, ok: r.ok, status: r.status };
+    } catch (err) {
+      return { name: item.name, url: item.url, ok: false, status: "network", err: err && err.message };
+    }
+  };
+
+  // Check verplichte bestanden
+  for (let i = 0; i < required.length; i++) {
+    const r = await probe(required[i]);
+    if (!r.ok) {
+      const detail = r.err ? (r.status + ": " + r.err) : ("HTTP " + r.status);
+      throw new Error("Asset onbereikbaar: " + r.name + " (" + detail + ")\nURL: " + r.url);
+    }
+  }
+  // Check ten minste één WASM-variant compleet
+  let lastErr = null;
+  for (let v = 0; v < wasmVariants.length; v++) {
+    const variant = wasmVariants[v];
+    const r1 = await probe(variant[0]);
+    const r2 = await probe(variant[1]);
+    if (r1.ok && r2.ok) return; // success — ten minste één variant werkt
+    lastErr = !r1.ok ? r1 : r2;
+  }
+  if (lastErr) {
+    const detail = lastErr.err ? (lastErr.status + ": " + lastErr.err) : ("HTTP " + lastErr.status);
+    throw new Error("Geen WASM-variant werkt. Laatste fout: " + lastErr.name + " (" + detail + ")\nURL: " + lastErr.url);
+  }
+}
+
 async function onScanFileChosen(ev) {
   const file = ev && ev.target && ev.target.files && ev.target.files[0];
   if (!file) return;
@@ -1854,14 +1909,17 @@ async function onScanFileChosen(ev) {
   try {
     await _loadTesseract();
     if (!isAlive()) return; // modal ondertussen gesloten
+
+    // Pre-flight check: probeer elk Tesseract-asset op te halen via
+    // HEAD-request. Zo zien we direct welke specifieke URL faalt
+    // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
+    _setScanProgress("Bestanden controleren…");
+    const baseUrl = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
+    await _preflightTesseract(baseUrl);
+    if (!isAlive()) return;
+
     _setScanProgress("Bon analyseren…");
     imgUrl = URL.createObjectURL(file);
-    // Absolute URLs zijn vereist omdat Tesseract.js v5 een blob-worker
-    // maakt waarvan de scope NIET dezelfde basis-URL heeft als de page.
-    // Een relatief pad als './vendor/tesseract/...' resolveert binnen
-    // de blob-worker naar 'blob:.../vendor/tesseract/...' wat geen
-    // bestaande URL is. Met absolute URLs voorkomen we dat.
-    const baseUrl = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
     const result = await Tesseract.recognize(imgUrl, "eng", {
       workerPath: baseUrl + "worker.min.js",
       corePath: baseUrl, // Tesseract appendt zelf simd-lstm/lstm wasm.js
