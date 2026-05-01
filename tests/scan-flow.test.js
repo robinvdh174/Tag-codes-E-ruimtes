@@ -60,6 +60,8 @@ global.URL.revokeObjectURL = function() {};
 global.setTimeout = function(fn) { try { fn(); } catch (e) {} return 0; };
 global.clearTimeout = function() {};
 global.console = { warn: function() {}, log: console.log };
+// Mock fetch zodat _preflightTesseract gewoon doorloopt (response.ok=true)
+global.fetch = function() { return Promise.resolve({ ok: true, status: 200 }); };
 
 // Stubs voor functies waarvan onScanFileChosen afhankelijk is
 let _scanErrors = [];
