@@ -50,10 +50,12 @@ global.document = {
   head: { appendChild: function() {} }
 };
 
-global.URL = {
-  createObjectURL: function() { return "blob:mock"; },
-  revokeObjectURL: function() {}
+// URL als constructor (voor `new URL(path, base)`) MET statische methoden.
+global.URL = function URL(path, base) {
+  this.href = String(base || "") + String(path || "");
 };
+global.URL.createObjectURL = function() { return "blob:mock"; };
+global.URL.revokeObjectURL = function() {};
 
 global.setTimeout = function(fn) { try { fn(); } catch (e) {} return 0; };
 global.clearTimeout = function() {};
@@ -79,6 +81,9 @@ global.Tesseract = {
 global._loadTesseract = function() { return Promise.resolve(global.Tesseract); };
 // Constants die buiten ons slice-block gedefinieerd zijn
 global.TESSERACT_VENDOR_DIR = "./vendor/tesseract/";
+global.APP_VERSION = "test-version";
+// window.location voor absolute URL-construction in onScanFileChosen
+global.window = { location: { href: "https://example.test/app/" } };
 
 // Slice de scan-flow code
 const block = sliceBlock("// Maximum bestandsgrootte voor een gescande bon", "// Parse de OCR-tekst");
