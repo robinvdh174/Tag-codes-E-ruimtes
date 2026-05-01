@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v22-preflight";
+const APP_VERSION = "v23-version-badge";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -2781,6 +2781,24 @@ checkPin();
 // een gebruiker draait — ook handig om te checken of een update echt
 // is doorgekomen op een telefoon.
 console.info("E-Kast Zoeker — versie " + APP_VERSION);
+
+// Tonen in de header zodat de gebruiker zonder console kan checken
+// welke versie actief is. Tap-handler kopieert de versie naar het
+// clipboard — handig om door te sturen bij een bug-report.
+(function() {
+  const el = document.getElementById("appVersionBadge");
+  if (!el) return;
+  el.textContent = APP_VERSION;
+  el.title = "App-versie. Tap om te kopiëren.";
+  el.addEventListener("click", function() {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(APP_VERSION);
+        showToast("Versie gekopieerd: " + APP_VERSION);
+      }
+    } catch (e) {}
+  });
+})();
 
 // Service Worker registreren voor offline ondersteuning
 if ("serviceWorker" in navigator) {
