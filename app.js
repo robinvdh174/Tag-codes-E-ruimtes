@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v23-version-badge";
+const APP_VERSION = "v24-createworker";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -1906,60 +1906,86 @@ async function onScanFileChosen(ev) {
   _setScanProgress("Scan-bibliotheek laden…");
 
   let imgUrl = null;
+  let _tWorker = null;
+  let _stage = "init";
   try {
+    _stage = "load-script";
     await _loadTesseract();
     if (!isAlive()) return; // modal ondertussen gesloten
 
     // Pre-flight check: probeer elk Tesseract-asset op te halen via
     // HEAD-request. Zo zien we direct welke specifieke URL faalt
     // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
+    _stage = "preflight";
     _setScanProgress("Bestanden controleren…");
-    const baseUrl = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
-    await _preflightTesseract(baseUrl);
+    // baseUrl wordt zonder trailing slash gebruikt voor Tesseract-paden
+    // omdat Tesseract intern zelf '/' toevoegt — dubbel-slash kan op
+    // sommige servers (en strict CSP-paden) onverwacht falen.
+    const baseUrlWithSlash = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
+    const baseUrl = baseUrlWithSlash.replace(/\/$/, "");
+    await _preflightTesseract(baseUrlWithSlash);
     if (!isAlive()) return;
 
-    _setScanProgress("Bon analyseren…");
-    imgUrl = URL.createObjectURL(file);
-    const result = await Tesseract.recognize(imgUrl, "eng", {
-      workerPath: baseUrl + "worker.min.js",
-      corePath: baseUrl, // Tesseract appendt zelf simd-lstm/lstm wasm.js
+    // Worker expliciet maken via createWorker (i.p.v. recognize-shorthand)
+    // zodat we een falende stap exact kunnen pinpointen en opruimen.
+    _stage = "create-worker";
+    _setScanProgress("Worker starten…");
+    _tWorker = await Tesseract.createWorker("eng", 1, {
+      workerPath: baseUrl + "/worker.min.js",
+      corePath: baseUrl,
       langPath: baseUrl,
-      // Worker direct vanuit URL i.p.v. blob — robuuster voor relatieve
-      // imports binnen de worker en voorkomt extra CSP-puzzels.
       workerBlobURL: false,
       logger: function(p) {
         if (!isAlive()) return;
         if (p && p.status === "recognizing text" && typeof p.progress === "number") {
           _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
         } else if (p && p.status) {
-          // Toon ook andere stadia (loading core, initializing api)
-          // zodat de gebruiker ziet dat er iets gebeurt.
           _setScanProgress(p.status);
         }
       }
     });
     if (!isAlive()) return;
+
+    _stage = "recognize";
+    _setScanProgress("Bon analyseren…");
+    imgUrl = URL.createObjectURL(file);
+    const result = await _tWorker.recognize(imgUrl);
+    if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
   } catch (err) {
     if (!isAlive()) return;
-    console.warn("Scan mislukt:", err);
-    // "Load failed" / "Failed to fetch" zijn cryptische netwerkfouten
-    // van iOS Safari resp. Chrome. Vertalen naar iets bruikbaars voor
-    // de gebruiker zodat hij weet dat het niet aan de bon ligt.
+    console.warn("Scan mislukt in stage '" + _stage + "':", err);
     let msg = err && err.message ? err.message : "Onbekende fout";
     const orig = msg;
     const lower = msg.toLowerCase();
-    if (lower.indexOf("load failed") !== -1 ||
-        lower.indexOf("networkerror") !== -1 ||
-        lower.indexOf("failed to fetch") !== -1) {
-      msg = "Kon de scan-bibliotheek niet ophalen. Mogelijke oorzaken: vendor-bestanden niet bereikbaar (404), gecachete oude app-versie, of geen netwerk.";
+    if (_stage === "preflight" && lower.indexOf("asset onbereikbaar") !== -1) {
+      // Pre-flight gaf al een duidelijke melding mee — geen extra
+      // vertaling nodig.
+    } else if (lower.indexOf("load failed") !== -1 ||
+               lower.indexOf("networkerror") !== -1 ||
+               lower.indexOf("failed to fetch") !== -1) {
+      msg = "Kon de scan-bibliotheek niet starten. Vendor-bestanden zijn wel bereikbaar (pre-flight OK), dus probleem zit waarschijnlijk in het maken van de Web Worker of het laden van de WASM module op deze browser.";
+    } else if (_stage === "create-worker") {
+      msg = "Worker kon niet gestart worden. Mogelijke oorzaken: Web Worker geblokkeerd door browser/CSP, of WASM-instantiatie faalt.";
     }
-    // Versie-info zodat we via een screenshot kunnen verifiëren welke
-    // app-build actief is. Plus de raw-error voor diepere diagnose.
-    msg += "\n\n[" + APP_VERSION + "] " + orig;
+    // Versie + faal-stage + raw-error voor diepere diagnose. Een stack
+    // (indien beschikbaar) helpt enorm bij het lokaliseren in de
+    // Tesseract.js source.
+    let detail = "[" + APP_VERSION + "] stage=" + _stage + " | " + orig;
+    if (err && err.stack) {
+      // Eerste 2 regels van de stack (functienaam + waar) is voldoende
+      // zonder de melding onleesbaar lang te maken.
+      const firstLines = String(err.stack).split("\n").slice(0, 3).join("\n");
+      detail += "\n" + firstLines;
+    }
+    msg += "\n\n" + detail;
     _showScanError(msg);
   } finally {
+    // Worker opruimen om geheugenlek te voorkomen, ook bij fout.
+    if (_tWorker && typeof _tWorker.terminate === "function") {
+      try { await _tWorker.terminate(); } catch (e) {}
+    }
     // Foto altijd actief weggooien — ook bij annulering of fout, geen
     // verwijzing meer naar de blob in geheugen.
     if (imgUrl) { try { URL.revokeObjectURL(imgUrl); } catch (e) {} }
@@ -2783,13 +2809,15 @@ checkPin();
 console.info("E-Kast Zoeker — versie " + APP_VERSION);
 
 // Tonen in de header zodat de gebruiker zonder console kan checken
-// welke versie actief is. Tap-handler kopieert de versie naar het
-// clipboard — handig om door te sturen bij een bug-report.
+// welke versie actief is. We laten alleen het korte 'v23' nummer zien
+// zodat het op één regel naast 'Sappi' past — de volledige versie-tag
+// (incl. beschrijving) wordt naar het clipboard gekopieerd op tap.
 (function() {
   const el = document.getElementById("appVersionBadge");
   if (!el) return;
-  el.textContent = APP_VERSION;
-  el.title = "App-versie. Tap om te kopiëren.";
+  const short = APP_VERSION.split("-")[0]; // "v23" uit "v23-version-badge"
+  el.textContent = short;
+  el.title = "App-versie " + APP_VERSION + ". Tap om te kopiëren.";
   el.addEventListener("click", function() {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {

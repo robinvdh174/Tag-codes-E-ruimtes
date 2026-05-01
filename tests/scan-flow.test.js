@@ -70,12 +70,28 @@ global._showScanResult = function(parsed) { _shownResults.push(parsed); };
 global._setScanProgress = function() {};
 global._parseBonText = function() { return { tagE: "MOCK", tagM: "", machine: "", omschrijving: "", raw: "" }; };
 
-// Tesseract mock — controleert of recognize ooit wordt aangeroepen
+// Tesseract mock — onScanFileChosen gebruikt nu Tesseract.createWorker
+// gevolgd door worker.recognize. We registreren een aanroep-vlag op de
+// recognize-call en bieden ook terminate aan.
 let _tesseractCalled = false;
+function _makeWorkerMock() {
+  return {
+    recognize: function() {
+      _tesseractCalled = true;
+      return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
+    },
+    terminate: function() { return Promise.resolve(); }
+  };
+}
 global.Tesseract = {
+  // Backwards-compat: oudere code-pad met Tesseract.recognize
   recognize: function() {
     _tesseractCalled = true;
     return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
+  },
+  // Nieuwe v5 API
+  createWorker: function() {
+    return Promise.resolve(_makeWorkerMock());
   }
 };
 
@@ -178,18 +194,26 @@ async function test7() {
 async function test8() {
   reset();
   // We starten een scan en hogen handmatig _scanToken op tijdens OCR
-  // (simuleert closeScan tijdens lopende OCR). Houder-object om
-  // de resolver te bereiken na await-gap.
+  // (simuleert closeScan tijdens lopende worker.recognize). Houder-
+  // object om de resolver te bereiken na await-gap.
   const holder = { resolve: null };
-  global.Tesseract.recognize = function() {
-    _tesseractCalled = true;
-    return new Promise(function(r) { holder.resolve = r; });
+  // De createWorker-flow geeft een worker terug met recognize. We
+  // overschrijven de worker.recognize zodat we 'm pending kunnen houden.
+  global.Tesseract.createWorker = function() {
+    return Promise.resolve({
+      recognize: function() {
+        _tesseractCalled = true;
+        return new Promise(function(r) { holder.resolve = r; });
+      },
+      terminate: function() { return Promise.resolve(); }
+    });
   };
   const promise = onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg" })] } });
-  // Een microtask wachten zodat onScanFileChosen de Tesseract.recognize
-  // call al heeft gedaan en holder.resolve gezet is.
+  // Twee microtasks wachten: één voor createWorker resolve, één voor de
+  // recognize-call die de holder vult.
   await new Promise(function(r) { setImmediate(r); });
-  ok(holder.resolve != null, "Tesseract.recognize is aangeroepen (sanity)");
+  await new Promise(function(r) { setImmediate(r); });
+  ok(holder.resolve != null, "worker.recognize is aangeroepen (sanity)");
   // Simuleer closeScan: token++ zodat huidige scan ongeldig is
   _scanToken = 999;
   holder.resolve({ data: { text: "Tag-code E: SHOULDNOTSHOW" } });
