@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v20-self-host";
+const APP_VERSION = "v21-absolute-paths";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -1856,12 +1856,19 @@ async function onScanFileChosen(ev) {
     if (!isAlive()) return; // modal ondertussen gesloten
     _setScanProgress("Bon analyseren…");
     imgUrl = URL.createObjectURL(file);
-    // Lokale paden voor worker, core (wasm) en taaldata. Tesseract
-    // kiest zelf simd-lstm vs lstm op basis van browser-support.
+    // Absolute URLs zijn vereist omdat Tesseract.js v5 een blob-worker
+    // maakt waarvan de scope NIET dezelfde basis-URL heeft als de page.
+    // Een relatief pad als './vendor/tesseract/...' resolveert binnen
+    // de blob-worker naar 'blob:.../vendor/tesseract/...' wat geen
+    // bestaande URL is. Met absolute URLs voorkomen we dat.
+    const baseUrl = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
     const result = await Tesseract.recognize(imgUrl, "eng", {
-      workerPath: TESSERACT_VENDOR_DIR + "worker.min.js",
-      corePath: TESSERACT_VENDOR_DIR,
-      langPath: TESSERACT_VENDOR_DIR,
+      workerPath: baseUrl + "worker.min.js",
+      corePath: baseUrl, // Tesseract appendt zelf simd-lstm/lstm wasm.js
+      langPath: baseUrl,
+      // Worker direct vanuit URL i.p.v. blob — robuuster voor relatieve
+      // imports binnen de worker en voorkomt extra CSP-puzzels.
+      workerBlobURL: false,
       logger: function(p) {
         if (!isAlive()) return;
         if (p && p.status === "recognizing text" && typeof p.progress === "number") {
