@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v24-createworker";
+const APP_VERSION = "v25-file-direct";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -1905,7 +1905,6 @@ async function onScanFileChosen(ev) {
   if (proc) proc.style.display = "";
   _setScanProgress("Scan-bibliotheek laden…");
 
-  let imgUrl = null;
   let _tWorker = null;
   let _stage = "init";
   try {
@@ -1948,8 +1947,13 @@ async function onScanFileChosen(ev) {
 
     _stage = "recognize";
     _setScanProgress("Bon analyseren…");
-    imgUrl = URL.createObjectURL(file);
-    const result = await _tWorker.recognize(imgUrl);
+    // Het File-object wordt rechtstreeks doorgegeven aan recognize().
+    // Tesseract.js v5 ondersteunt File/Blob via structured cloning naar
+    // de worker. We vermijden bewust URL.createObjectURL: blob-URLs die
+    // op de main thread worden aangemaakt zijn op iOS Safari niet altijd
+    // bereikbaar vanuit web workers, waardoor recognize() faalt met
+    // "TypeError: Failed to fetch" in tesseract.min.js.
+    const result = await _tWorker.recognize(file);
     if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
@@ -1986,9 +1990,6 @@ async function onScanFileChosen(ev) {
     if (_tWorker && typeof _tWorker.terminate === "function") {
       try { await _tWorker.terminate(); } catch (e) {}
     }
-    // Foto altijd actief weggooien — ook bij annulering of fout, geen
-    // verwijzing meer naar de blob in geheugen.
-    if (imgUrl) { try { URL.revokeObjectURL(imgUrl); } catch (e) {} }
     const inp = document.getElementById("scanFileInput");
     if (inp) inp.value = "";
   }

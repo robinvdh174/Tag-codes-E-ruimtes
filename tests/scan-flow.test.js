@@ -50,11 +50,15 @@ global.document = {
   head: { appendChild: function() {} }
 };
 
+// Teller voor URL.createObjectURL — moet 0 blijven want we geven het
+// File-object rechtstreeks aan recognize() door (zie iOS Safari bugfix).
+let _objectUrlCount = 0;
+
 // URL als constructor (voor `new URL(path, base)`) MET statische methoden.
 global.URL = function URL(path, base) {
   this.href = String(base || "") + String(path || "");
 };
-global.URL.createObjectURL = function() { return "blob:mock"; };
+global.URL.createObjectURL = function() { _objectUrlCount++; return "blob:mock"; };
 global.URL.revokeObjectURL = function() {};
 
 global.setTimeout = function(fn) { try { fn(); } catch (e) {} return 0; };
@@ -72,12 +76,17 @@ global._parseBonText = function() { return { tagE: "MOCK", tagM: "", machine: ""
 
 // Tesseract mock — onScanFileChosen gebruikt nu Tesseract.createWorker
 // gevolgd door worker.recognize. We registreren een aanroep-vlag op de
-// recognize-call en bieden ook terminate aan.
+// recognize-call en bieden ook terminate aan. Ook bewaren we het
+// argument waarmee recognize() werd aangeroepen, zodat tests kunnen
+// verifiëren dat we het File-object rechtstreeks doorgeven (niet een
+// blob URL — dat veroorzaakte de iOS Safari "Failed to fetch" bug).
 let _tesseractCalled = false;
+let _recognizeArg = null;
 function _makeWorkerMock() {
   return {
-    recognize: function() {
+    recognize: function(arg) {
       _tesseractCalled = true;
+      _recognizeArg = arg;
       return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
     },
     terminate: function() { return Promise.resolve(); }
@@ -85,8 +94,9 @@ function _makeWorkerMock() {
 }
 global.Tesseract = {
   // Backwards-compat: oudere code-pad met Tesseract.recognize
-  recognize: function() {
+  recognize: function(arg) {
     _tesseractCalled = true;
+    _recognizeArg = arg;
     return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
   },
   // Nieuwe v5 API
@@ -120,6 +130,8 @@ function reset() {
   _scanErrors = [];
   _shownResults = [];
   _tesseractCalled = false;
+  _recognizeArg = null;
+  _objectUrlCount = 0;
 }
 
 // ====================================================================
@@ -129,10 +141,16 @@ function reset() {
 // ---------- 1. Geldige image gaat door naar OCR ----------
 async function test1() {
   reset();
-  await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 2 * 1024 * 1024 })] } });
+  const f = mockFile({ type: "image/jpeg", size: 2 * 1024 * 1024 });
+  await onScanFileChosen({ target: { files: [f] } });
   eq(_tesseractCalled, true, "Geldige image: OCR wordt aangeroepen");
   eq(_scanErrors.length, 0, "Geldige image: geen errors");
   eq(_shownResults.length, 1, "Geldige image: resultaat getoond");
+  // Regression check voor iOS Safari "Failed to fetch" bug:
+  // - recognize() krijgt het File-object rechtstreeks (geen blob URL)
+  // - URL.createObjectURL is nooit aangeroepen
+  eq(_recognizeArg === f, true, "recognize() krijgt File-object direct (geen blob URL)");
+  eq(_objectUrlCount, 0, "URL.createObjectURL wordt NIET gebruikt (iOS Safari worker-fetch bug)");
 }
 
 // ---------- 2. PDF afgewezen voor OCR-call ----------
