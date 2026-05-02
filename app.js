@@ -583,14 +583,14 @@ function switchTab(name) {
 }
 
 function movePill(tabName) {
-  const tabOrder = ["search","list","status","add"];
+  const tabOrder = ["search","list","status","bonnen","add"];
   let idx = tabOrder.indexOf(tabName);
   const container = document.getElementById("tabsContainer");
   let pill = document.getElementById("tabsPill");
   if (!container || !pill || idx === -1) return;
   const padding = 4;
   const availWidth = container.offsetWidth - padding * 2;
-  const tabWidth = availWidth / 4;
+  const tabWidth = availWidth / 5;
   pill.style.width = tabWidth + "px";
   pill.style.left = (padding + idx * tabWidth) + "px";
 }
@@ -2395,8 +2395,8 @@ function _wbUpdateBadge() {
   const b = document.getElementById("wbBadge");
   if (!b) return;
   const n = (_werkbon.ids || []).length;
-  if (n > 0) { b.style.display = ""; b.textContent = String(n); }
-  else { b.style.display = "none"; }
+  if (n > 0) { b.classList.remove("hidden"); b.textContent = String(n); }
+  else { b.classList.add("hidden"); }
 }
 
 function _wbResolveItems() {
