@@ -2416,11 +2416,17 @@ function _wbResolveItems() {
 function openWerkbon() {
   const m = document.getElementById("werkbonModal");
   if (!m) return;
+  // Visually activate the Labels tab button
+  ["search","list","status","add"].forEach(function(t) {
+    const btn = document.getElementById("tbtn-" + t);
+    if (btn) { btn.classList.remove("active","active-blue"); btn.setAttribute("aria-selected","false"); }
+  });
+  const bonBtn = document.getElementById("tbtn-bonnen");
+  if (bonBtn) { bonBtn.classList.add("active"); bonBtn.setAttribute("aria-selected","true"); }
+  movePill("bonnen");
   // Reset altijd naar fase 1 bij openen, behalve als er nog werk te doen is.
   document.getElementById("wbPhaseScan").style.display = "";
   document.getElementById("wbPhaseCheck").style.display = "none";
-  const verg = document.getElementById("wbVergunning");
-  if (verg) verg.value = _werkbon.vergunning || "";
   const manualInp = document.getElementById("wbManualInput");
   if (manualInp) manualInp.value = "";
   _wbHideManualSuggest();
@@ -2433,6 +2439,20 @@ function closeWerkbon() {
   if (!m) return;
   m.classList.remove("open");
   _wbHideManualSuggest();
+  // Restore active visual state to whichever tab panel is currently shown
+  const bonBtn = document.getElementById("tbtn-bonnen");
+  if (bonBtn) { bonBtn.classList.remove("active"); bonBtn.setAttribute("aria-selected","false"); }
+  ["search","list","status","add"].forEach(function(t) {
+    const panel = document.getElementById("tab-" + t);
+    if (panel && panel.classList.contains("active")) {
+      const btn = document.getElementById("tbtn-" + t);
+      if (btn) {
+        if (t === "status") btn.classList.add("active-blue"); else btn.classList.add("active");
+        btn.setAttribute("aria-selected","true");
+        movePill(t);
+      }
+    }
+  });
 }
 
 function werkbonSetVergunning(v) {
@@ -2584,8 +2604,6 @@ function werkbonClearAll() {
       const p2 = document.getElementById("wbPhaseCheck");
       if (p1) p1.style.display = "";
       if (p2) p2.style.display = "none";
-      const verg = document.getElementById("wbVergunning");
-      if (verg) verg.value = "";
       showToast("Werkbon leeggemaakt");
     }
   );
