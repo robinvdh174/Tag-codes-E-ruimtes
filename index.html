@@ -52,7 +52,7 @@
       <span class="tab-label">STATUS</span>
     </button>
     <button class="tab-pill" id="tbtn-bonnen" onclick="openWerkbon()" role="button" aria-label="Labels openen">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5a1 1 0 0 1 1-1h2"/><path d="M17 4h2a1 1 0 0 1 1 1v2"/><path d="M4 17v2a1 1 0 0 0 1 1h2"/><path d="M17 20h2a1 1 0 0 0 1-1v-2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="15" x2="17" y2="15"/></svg><span class="status-badge hidden" id="wbBadge" aria-live="polite">0</span></span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg><span class="status-badge hidden" id="wbBadge" aria-live="polite">0</span></span>
       <span class="tab-label">LABELS</span>
     </button>
     <button class="tab-pill" id="tbtn-add" onclick="switchTab('add')" role="tab" aria-selected="false" aria-controls="tab-add" aria-label="Toevoegen">
@@ -127,14 +127,15 @@
   <div class="modal" style="max-width:420px;">
     <!-- FASE 1: bonnen verzamelen -->
     <div id="wbPhaseScan">
-      <div class="modal-title">&#128203; Werkbon &mdash; bonnen verzamelen</div>
-      <p class="scan-help">Scan elke bon &eacute;&eacute;n voor &eacute;&eacute;n. De app groepeert de kasten automatisch per ruimte voor een effici&euml;nte route.</p>
+      <div class="modal-title">Meerdere labels</div>
       <div id="wbItemsList" class="wb-items"></div>
-      <button class="btn-primary" type="button" onclick="werkbonStartScan()" style="margin-bottom:.8rem;">&#128247; Bon scannen &amp; toevoegen</button>
       <div class="wb-manual">
-        <label style="margin-bottom:.3rem;">Of zoek &amp; voeg handmatig toe</label>
         <div style="position:relative;">
-          <input type="text" id="wbManualInput" placeholder="Typ tag-code..." autocomplete="off" autocorrect="off" spellcheck="false" oninput="werkbonManualInput(this.value)" onfocus="werkbonManualInput(this.value)" onblur="werkbonManualBlur()">
+          <div class="search-bar-wrap">
+            <input type="text" id="wbManualInput" placeholder="Typ tag-code of zoek..." autocomplete="off" autocorrect="off" spellcheck="false" oninput="werkbonManualInput(this.value)" onfocus="werkbonManualInput(this.value)" onblur="werkbonManualBlur()">
+            <div class="search-bar-divider" aria-hidden="true"></div>
+            <button type="button" class="search-bar-cam" onclick="werkbonStartScan()" aria-label="Bon scannen met camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
           <div id="wbManualSuggest" class="wb-manual-suggest" style="display:none;"></div>
         </div>
       </div>
