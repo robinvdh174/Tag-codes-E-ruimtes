@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v25-file-direct";
+const APP_VERSION = "v26";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
