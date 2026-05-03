@@ -154,7 +154,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .wb-items{margin-bottom:1rem;max-height:50vh;overflow-y:auto;}
 .wb-group-header{font-size:.75rem;font-weight:700;color:#4a9eff;text-transform:uppercase;letter-spacing:.08em;padding:.5rem .6rem .35rem;border-bottom:2px solid #4a9eff;margin-bottom:.5rem;margin-top:1.2rem;display:flex;align-items:center;gap:.3rem;background:rgba(74,158,255,.06);border-radius:4px 4px 0 0;}
 .wb-group-header:first-child{margin-top:0;}
-.wb-item-row{display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:center;padding:.5rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:.4rem;}
+.wb-item-row{display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:start;padding:.5rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:.4rem;}
 .wb-item-info{min-width:0;}
 .wb-item-code{font-family:monospace;font-size:.9rem;color:var(--accent);font-weight:700;word-break:break-all;}
 .wb-item-note{font-size:.75rem;color:#7a8aaa;margin-top:.15rem;font-style:italic;}

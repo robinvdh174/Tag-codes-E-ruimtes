@@ -2593,43 +2593,6 @@ function werkbonRemoveItem(id) {
   _updateLabelBtn(id);
 }
 
-function werkbonProceedToCheck() {
-  openAfwerkenModal();
-}
-
-function werkbonSetAction(action) {
-  if (_WB_VALID_ACTIONS.indexOf(action) === -1) return;
-  _werkbon.action = action;
-  _wbSave();
-  _wbHighlightAction(action);
-}
-
-function _wbHighlightAction(action) {
-  const wrap = document.getElementById("wbActionPick");
-  if (!wrap) return;
-  const btns = wrap.querySelectorAll(".wb-action-btn");
-  for (let i = 0; i < btns.length; i++) {
-    btns[i].classList.toggle("active", btns[i].getAttribute("data-action") === action);
-  }
-}
-
-async function werkbonApplyOne(id) {
-  const naamEl = document.getElementById("wbNaam");
-  const datumEl = document.getElementById("wbDatum");
-  const naam = naamEl ? naamEl.value.trim() : "";
-  const datum = datumEl ? datumEl.value.trim() : "";
-  if (!naam) { showToast("Vul eerst je naam in"); naamEl && naamEl.focus(); return; }
-  if (!datum) { showToast("Vul eerst de datum in"); datumEl && datumEl.focus(); return; }
-  if (_werkbon.done[id]) return; // al gedaan — voorkomt dubbele tap
-  const action = _werkbon.action || "ok";
-  // Optimistisch updaten zodat snelle taps niet hetzelfde item twee keer
-  // afvuren tijdens netwerk-delay. setStatus gooit zelf nooit (queue bij
-  // offline) dus rollback is niet nodig.
-  _werkbon.done[id] = action;
-  _wbSave();
-  _wbRenderChecklist();
-  await setStatus(id, action, naam, datum);
-}
 
 let _werkbonFinalizing = false;
 async function werkbonFinalize() {
@@ -2748,49 +2711,7 @@ function wbSetItemStatus(id, action) {
   renderLabelsTab();
 }
 
-// ---------- Render: checklist in fase 2 ----------
-function _wbRenderChecklist() {
-  const list = document.getElementById("wbCheckList");
-  const prog = document.getElementById("wbProgress");
-  if (!list) return;
-  list.textContent = "";
-  const items = _wbResolveItems();
-  const total = items.length;
-  const doneCount = items.filter(function(it) { return _werkbon.done[it.id]; }).length;
-  if (prog) prog.textContent = doneCount + " / " + total + " ✓";
 
-  if (total === 0) {
-    const empty = document.createElement("div");
-    empty.className = "wb-empty";
-    empty.textContent = "Geen kasten in deze werkbon.";
-    list.appendChild(empty);
-    return;
-  }
-
-  // Zelfde groepering als fase 1 — ruimte voor ruimte.
-  const groups = {};
-  const order = [];
-  for (let i = 0; i < items.length; i++) {
-    const loc = items[i].location || "(geen ruimte)";
-    if (!groups[loc]) { groups[loc] = []; order.push(loc); }
-    groups[loc].push(items[i]);
-  }
-  order.sort(function(a, b) { return a.localeCompare(b); });
-
-  for (let g = 0; g < order.length; g++) {
-    const loc = order[g];
-    const arr = groups[loc];
-    const groupDone = arr.filter(function(it) { return _werkbon.done[it.id]; }).length;
-    const groupHeader = document.createElement("div");
-    groupHeader.className = "wb-group-header";
-    groupHeader.textContent = "📍 " + loc + " (" + groupDone + "/" + arr.length + ")";
-    list.appendChild(groupHeader);
-    arr.sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
-    for (let i = 0; i < arr.length; i++) {
-      list.appendChild(_wbItemRow(arr[i], true));
-    }
-  }
-}
 
 
 // ============================================================
