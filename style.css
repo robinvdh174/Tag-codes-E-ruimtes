@@ -205,3 +205,5 @@ input[type=date]:focus{border-color:var(--accent);}
 .labels-clear-btn:active{color:var(--danger);border-color:var(--danger);}
 .labels-list-container{flex:1;}
 .labels-footer{padding-top:.9rem;margin-top:.4rem;border-top:1px solid var(--border);}
+.list-room-header{grid-column:1/-1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.09em;padding:.55rem .2rem .35rem;border-bottom:2px solid var(--accent);margin-top:1.1rem;margin-bottom:.5rem;}
+.list-room-header:first-child{margin-top:0;}

@@ -845,9 +845,6 @@ function makeCard(item) {
   appendHighlighted(codeEl, item.code, term);
   info.appendChild(codeEl);
 
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;";
-
   const loc = document.createElement("div");
   loc.className = "loc";
   appendHighlighted(loc, item.location, term);
@@ -864,10 +861,58 @@ function makeCard(item) {
     });
     loc.appendChild(infoBtn);
   }
-  row.appendChild(loc);
+  info.appendChild(loc);
+
+  if (item.position) {
+    const pos = document.createElement("div");
+    pos.className = "pos";
+    pos.appendChild(document.createTextNode("\uD83D\uDCCD ")); // 📍
+    appendHighlighted(pos, item.position, term);
+    info.appendChild(pos);
+  }
+  if (item.note) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.appendChild(document.createTextNode("\uD83D\uDCAC ")); // 💬
+    appendHighlighted(note, item.note, term);
+    info.appendChild(note);
+  }
+
+  top.appendChild(info);
+
+  const rightCol = document.createElement("div");
+  rightCol.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;gap:.35rem;";
+
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;gap:.15rem;";
+
+  const labelBtn = document.createElement("button");
+  labelBtn.type = "button";
+  labelBtn.id = "lbtn-" + id;
+  const inCollection = _werkbon.ids.indexOf(id) !== -1;
+  labelBtn.className = "btn-label-toggle" + (inCollection ? " in-collection" : "");
+  labelBtn.title = inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels";
+  labelBtn.setAttribute("aria-label", inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels");
+  labelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
+  labelBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    toggleLabelItem(id);
+  });
+  btnRow.appendChild(labelBtn);
+
+  const pencil = document.createElement("button");
+  pencil.type = "button";
+  pencil.className = "btn-pencil";
+  pencil.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  pencil.addEventListener("click", function(e) {
+    e.stopPropagation();
+    toggleEdit(id);
+  });
+  btnRow.appendChild(pencil);
+  rightCol.appendChild(btnRow);
 
   const statusWrap = document.createElement("div");
-  statusWrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;";
+  statusWrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;";
 
   const statusBtn = document.createElement("button");
   statusBtn.type = "button";
@@ -888,49 +933,8 @@ function makeCard(item) {
     meta.textContent = item.statusBy + (item.statusDate ? " \u2022 " + formatDatum(item.statusDate) : "");
     statusWrap.appendChild(meta);
   }
-  row.appendChild(statusWrap);
-  info.appendChild(row);
-
-  if (item.position) {
-    const pos = document.createElement("div");
-    pos.className = "pos";
-    pos.appendChild(document.createTextNode("\uD83D\uDCCD ")); // 📍
-    appendHighlighted(pos, item.position, term);
-    info.appendChild(pos);
-  }
-  if (item.note) {
-    const note = document.createElement("div");
-    note.className = "note";
-    note.appendChild(document.createTextNode("\uD83D\uDCAC ")); // 💬
-    appendHighlighted(note, item.note, term);
-    info.appendChild(note);
-  }
-
-  top.appendChild(info);
-
-  const labelBtn = document.createElement("button");
-  labelBtn.type = "button";
-  labelBtn.id = "lbtn-" + id;
-  const inCollection = _werkbon.ids.indexOf(id) !== -1;
-  labelBtn.className = "btn-label-toggle" + (inCollection ? " in-collection" : "");
-  labelBtn.title = inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels";
-  labelBtn.setAttribute("aria-label", inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels");
-  labelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
-  labelBtn.addEventListener("click", function(e) {
-    e.stopPropagation();
-    toggleLabelItem(id);
-  });
-  top.appendChild(labelBtn);
-
-  const pencil = document.createElement("button");
-  pencil.type = "button";
-  pencil.className = "btn-pencil";
-  pencil.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-  pencil.addEventListener("click", function(e) {
-    e.stopPropagation();
-    toggleEdit(id);
-  });
-  top.appendChild(pencil);
+  rightCol.appendChild(statusWrap);
+  top.appendChild(rightCol);
 
   card.appendChild(top);
 
@@ -1192,11 +1196,44 @@ function setRoom(el, r) {
 function showFiltered() {
   _currentSearchTerm = "";
   const filtered = data.filter(function(d) { return activeRoom === "all" || d.location === activeRoom; });
-  filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
   const container = document.getElementById("listResults");
   container.textContent = "";
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
+
+  if (activeRoom === "all") {
+    const groups = {};
+    const order = [];
+    for (let i = 0; i < filtered.length; i++) {
+      const loc = filtered[i].location || "(geen ruimte)";
+      if (!groups[loc]) { groups[loc] = []; order.push(loc); }
+      groups[loc].push(filtered[i]);
+    }
+    order.sort(function(a, b) { return a.localeCompare(b); });
+    for (let g = 0; g < order.length; g++) {
+      const loc = order[g];
+      const hdr = document.createElement("div");
+      hdr.className = "list-room-header";
+      hdr.appendChild(document.createTextNode(loc + " (" + groups[loc].length + ")"));
+      if (ROOM_INFO[loc]) {
+        hdr.appendChild(document.createTextNode(" "));
+        const infoBtn = document.createElement("button");
+        infoBtn.className = "btn-info-loc";
+        infoBtn.type = "button";
+        infoBtn.title = "Waar is dit?";
+        infoBtn.textContent = "ⓘ";
+        (function(l) {
+          infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
+        })(loc);
+        hdr.appendChild(infoBtn);
+      }
+      frag.appendChild(hdr);
+      groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
+      for (let i = 0; i < groups[loc].length; i++) frag.appendChild(makeCard(groups[loc][i]));
+    }
+  } else {
+    filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
+    for (let i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
+  }
   container.appendChild(frag);
 }
 
@@ -2457,7 +2494,19 @@ function renderLabelsTab() {
     const loc = order[g];
     const hdr = document.createElement("div");
     hdr.className = "wb-group-header";
-    hdr.textContent = "📍 " + loc + " (" + groups[loc].length + ")";
+    hdr.appendChild(document.createTextNode("📍 " + loc + " (" + groups[loc].length + ")"));
+    if (ROOM_INFO[loc]) {
+      hdr.appendChild(document.createTextNode(" "));
+      const hdrInfoBtn = document.createElement("button");
+      hdrInfoBtn.className = "btn-info-loc";
+      hdrInfoBtn.type = "button";
+      hdrInfoBtn.title = "Waar is dit?";
+      hdrInfoBtn.textContent = "ⓘ";
+      (function(l) {
+        hdrInfoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
+      })(loc);
+      hdr.appendChild(hdrInfoBtn);
+    }
     container.appendChild(hdr);
     groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
     for (let i = 0; i < groups[loc].length; i++) {
