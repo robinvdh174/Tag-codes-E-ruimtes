@@ -190,3 +190,18 @@ input[type=date]:focus{border-color:var(--accent);}
 .setup-box ol{font-size:.8rem;color:var(--muted);margin:.5rem 0 0 1.2rem;line-height:1.8;}
 .setup-box code{font-family:monospace;color:var(--accent);background:#111;padding:.1rem .3rem;border-radius:3px;font-size:.75rem;}
 @media(min-width:768px){main{max-width:900px;margin:0 auto;}.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;}.card{margin-bottom:0;}}
+/* ===== LABEL TOGGLE BUTTON op kaartjes ===== */
+.btn-label-toggle{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.55;transition:opacity .15s,color .15s;}
+.btn-label-toggle svg{width:18px;height:18px;display:block;}
+.btn-label-toggle:active{opacity:1;}
+.btn-label-toggle.in-collection{color:var(--accent);opacity:1;}
+.btn-label-toggle.in-collection svg{stroke:var(--accent);}
+/* ===== LABELS TAB ===== */
+.labels-header{display:flex;align-items:center;gap:.6rem;margin-bottom:.9rem;padding-bottom:.7rem;border-bottom:1px solid var(--border);}
+.labels-header-title{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex:1;}
+.labels-header-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;background:var(--accent);color:#000;border-radius:10px;font-size:.72rem;font-weight:900;}
+.labels-header-count.hidden{display:none!important;}
+.labels-clear-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:.72rem;font-weight:600;padding:.3rem .65rem;border-radius:6px;cursor:pointer;white-space:nowrap;}
+.labels-clear-btn:active{color:var(--danger);border-color:var(--danger);}
+.labels-list-container{flex:1;}
+.labels-footer{padding-top:.9rem;margin-top:.4rem;border-top:1px solid var(--border);}

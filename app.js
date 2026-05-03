@@ -555,14 +555,16 @@ function refreshUI() {
   if (document.getElementById("tab-search").classList.contains("active")) doSearch(document.getElementById("searchInput").value);
   if (document.getElementById("tab-list").classList.contains("active")) renderList();
   if (document.getElementById("tab-status").classList.contains("active")) renderStatus();
+  if (document.getElementById("tab-bonnen").classList.contains("active")) renderLabelsTab();
   updateStatusBadge();
+  refreshAllLabelBtns();
 }
 
 // ============================================================
 // TABS
 // ============================================================
 function switchTab(name) {
-  ["search","list","status","add"].forEach(function(t) {
+  ["search","list","status","bonnen","add"].forEach(function(t) {
     document.getElementById("tab-" + t).classList.remove("active");
     const btn = document.getElementById("tbtn-" + t);
     btn.classList.remove("active", "active-blue");
@@ -579,6 +581,7 @@ function switchTab(name) {
   movePill(name);
   if (name === "list") renderList();
   if (name === "status") renderStatus();
+  if (name === "bonnen") renderLabelsTab();
   updateStatusBadge();
 }
 
@@ -904,6 +907,20 @@ function makeCard(item) {
   }
 
   top.appendChild(info);
+
+  const labelBtn = document.createElement("button");
+  labelBtn.type = "button";
+  labelBtn.id = "lbtn-" + id;
+  const inCollection = _werkbon.ids.indexOf(id) !== -1;
+  labelBtn.className = "btn-label-toggle" + (inCollection ? " in-collection" : "");
+  labelBtn.title = inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels";
+  labelBtn.setAttribute("aria-label", inCollection ? "Verwijderen uit labels" : "Toevoegen aan labels");
+  labelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
+  labelBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    toggleLabelItem(id);
+  });
+  top.appendChild(labelBtn);
 
   const pencil = document.createElement("button");
   pencil.type = "button";
@@ -2156,7 +2173,6 @@ function _showScanError(msg) {
 }
 
 function _appendCodeRow(parent, label, code, isPrimary) {
-  const isWerkbon = _scanMode === "werkbon";
   const row = document.createElement("div");
   row.className = "scan-row";
   const lbl = document.createElement("div");
@@ -2175,8 +2191,6 @@ function _appendCodeRow(parent, label, code, isPrimary) {
   inputWrap.appendChild(input);
   row.appendChild(inputWrap);
 
-  // Live validatie-indicator: groen/rood vinkje rechts van het veld
-  // dat real-time toont of de getypte code in de database bestaat.
   const status = document.createElement("div");
   status.className = "scan-row-status";
   inputWrap.appendChild(status);
@@ -2184,24 +2198,11 @@ function _appendCodeRow(parent, label, code, isPrimary) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn-primary scan-search-btn";
-  btn.textContent = isWerkbon ? "+ Voeg toe" : "→ Zoek";
+  btn.textContent = "→ Zoek";
   btn.onclick = function() {
     const v = input.value.trim();
     if (!v) return;
-    if (isWerkbon) {
-      const r = werkbonAddItemByCode(v);
-      if (r.reason === "added") {
-        showToast("Toegevoegd: " + (r.item.code || v));
-        closeScan(); // werkbon-modal staat er al onder, blijft zichtbaar
-        _wbRenderItems();
-      } else if (r.reason === "dup") {
-        showToast("Stond al in de werkbon: " + (r.item.code || v));
-      } else {
-        showToast("\"" + v + "\" bestaat niet in de database");
-      }
-    } else {
-      _searchFromScan(v);
-    }
+    _searchFromScan(v);
   };
   row.appendChild(btn);
 
@@ -2275,12 +2276,11 @@ function _appendInfoRow(parent, label, val) {
 }
 
 function _appendFallbackHints(parent, parsed) {
-  const isWerkbon = _scanMode === "werkbon";
   const wrap = document.createElement("div");
   wrap.className = "scan-fallback";
   const lbl = document.createElement("div");
   lbl.className = "scan-row-label";
-  lbl.textContent = isWerkbon ? "Of zoek handmatig met:" : "Zoek met:";
+  lbl.textContent = "Zoek met:";
   wrap.appendChild(lbl);
   const row = document.createElement("div");
   row.className = "suggestions-row";
@@ -2321,22 +2321,8 @@ function _codeExistsInData(code) {
 }
 
 function _searchFromScan(term) {
-  if (_scanMode === "werkbon") {
-    // Werkbon-modal staat al open onder scan-modal — gewoon scan
-    // sluiten en het manuele zoekveld pre-fillen voor selectie.
-    closeScan();
-    setTimeout(function() {
-      const inp = document.getElementById("wbManualInput");
-      if (inp) {
-        inp.value = term;
-        try { inp.focus(); } catch (e) {}
-        werkbonManualInput(term);
-      }
-    }, 50);
-    return;
-  }
   closeScan();
-  try { switchTab("search"); } catch (e) {}
+  switchTab("search");
   const input = document.getElementById("searchInput");
   if (input) {
     input.value = term;
@@ -2399,6 +2385,87 @@ function _wbUpdateBadge() {
   else { b.classList.add("hidden"); }
 }
 
+function toggleLabelItem(id) {
+  if (_werkbon.ids.indexOf(id) !== -1) {
+    werkbonRemoveItem(id);
+    showToast("Verwijderd uit labels");
+  } else {
+    if (werkbonAddItemById(id)) {
+      showToast("Toegevoegd aan labels");
+      _updateLabelBtn(id);
+      if (document.getElementById("tab-bonnen").classList.contains("active")) renderLabelsTab();
+    }
+  }
+}
+
+function _updateLabelBtn(id) {
+  const btn = document.getElementById("lbtn-" + id);
+  if (!btn) return;
+  const inCollection = _werkbon.ids.indexOf(id) !== -1;
+  if (inCollection) {
+    btn.classList.add("in-collection");
+    btn.title = "Verwijderen uit labels";
+    btn.setAttribute("aria-label", "Verwijderen uit labels");
+  } else {
+    btn.classList.remove("in-collection");
+    btn.title = "Toevoegen aan labels";
+    btn.setAttribute("aria-label", "Toevoegen aan labels");
+  }
+}
+
+function refreshAllLabelBtns() {
+  const btns = document.querySelectorAll(".btn-label-toggle");
+  for (let i = 0; i < btns.length; i++) {
+    const id = btns[i].id.replace("lbtn-", "");
+    _updateLabelBtn(id);
+  }
+}
+
+function renderLabelsTab() {
+  const container = document.getElementById("labelsListContainer");
+  const footer = document.getElementById("labelsFooter");
+  const countEl = document.getElementById("labelsCount");
+  if (!container) return;
+  container.textContent = "";
+  const items = _wbResolveItems();
+  const n = items.length;
+
+  if (countEl) {
+    countEl.textContent = n;
+    if (n > 0) countEl.classList.remove("hidden"); else countEl.classList.add("hidden");
+  }
+  if (footer) footer.style.display = n > 0 ? "" : "none";
+
+  if (n === 0) {
+    const empty = document.createElement("div");
+    empty.className = "wb-empty";
+    empty.textContent = "Nog geen labels verzameld. Zoek een kast op en tik het label-icoontje op de kaart.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const groups = {};
+  const order = [];
+  for (let i = 0; i < items.length; i++) {
+    const loc = items[i].location || "(geen ruimte)";
+    if (!groups[loc]) { groups[loc] = []; order.push(loc); }
+    groups[loc].push(items[i]);
+  }
+  order.sort(function(a, b) { return a.localeCompare(b); });
+
+  for (let g = 0; g < order.length; g++) {
+    const loc = order[g];
+    const hdr = document.createElement("div");
+    hdr.className = "wb-group-header";
+    hdr.textContent = "📍 " + loc + " (" + groups[loc].length + ")";
+    container.appendChild(hdr);
+    groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
+    for (let i = 0; i < groups[loc].length; i++) {
+      container.appendChild(_wbItemRow(groups[loc][i], false));
+    }
+  }
+}
+
 function _wbResolveItems() {
   const out = [];
   const seen = {};
@@ -2413,59 +2480,25 @@ function _wbResolveItems() {
   return out;
 }
 
-function openWerkbon() {
+function openAfwerkenModal() {
+  if (_werkbon.ids.length === 0) return;
   const m = document.getElementById("werkbonModal");
   if (!m) return;
-  // Visually activate the Labels tab button
-  ["search","list","status","add"].forEach(function(t) {
-    const btn = document.getElementById("tbtn-" + t);
-    if (btn) { btn.classList.remove("active","active-blue"); btn.setAttribute("aria-selected","false"); }
-  });
-  const bonBtn = document.getElementById("tbtn-bonnen");
-  if (bonBtn) { bonBtn.classList.add("active"); bonBtn.setAttribute("aria-selected","true"); }
-  movePill("bonnen");
-  // Reset altijd naar fase 1 bij openen, behalve als er nog werk te doen is.
-  document.getElementById("wbPhaseScan").style.display = "";
-  document.getElementById("wbPhaseCheck").style.display = "none";
-  const manualInp = document.getElementById("wbManualInput");
-  if (manualInp) manualInp.value = "";
-  _wbHideManualSuggest();
-  _wbRenderItems();
+  const naam = document.getElementById("wbNaam");
+  const datum = document.getElementById("wbDatum");
+  if (naam && !naam.value) {
+    try { naam.value = safeGet("ekast-device", "") || ""; } catch (e) {}
+  }
+  if (datum && !datum.value) datum.value = todayISO();
+  _wbHighlightAction(_werkbon.action || "ok");
+  _wbRenderChecklist();
   m.classList.add("open");
 }
 
-function closeWerkbon() {
+function closeAfwerkenModal() {
   const m = document.getElementById("werkbonModal");
   if (!m) return;
   m.classList.remove("open");
-  _wbHideManualSuggest();
-  // Restore active visual state to whichever tab panel is currently shown
-  const bonBtn = document.getElementById("tbtn-bonnen");
-  if (bonBtn) { bonBtn.classList.remove("active"); bonBtn.setAttribute("aria-selected","false"); }
-  ["search","list","status","add"].forEach(function(t) {
-    const panel = document.getElementById("tab-" + t);
-    if (panel && panel.classList.contains("active")) {
-      const btn = document.getElementById("tbtn-" + t);
-      if (btn) {
-        if (t === "status") btn.classList.add("active-blue"); else btn.classList.add("active");
-        btn.setAttribute("aria-selected","true");
-        movePill(t);
-      }
-    }
-  });
-}
-
-function werkbonSetVergunning(v) {
-  _werkbon.vergunning = String(v || "").trim().slice(0, 32);
-  _wbSave();
-}
-
-function werkbonStartScan() {
-  _scanMode = "werkbon";
-  // Werkbon-modal blijft open onder de scan-modal — als de gebruiker
-  // de scan annuleert (sluit-knop of buitenklik) zit hij meteen weer
-  // op de werkbon i.p.v. de zoek-tab.
-  openScan();
 }
 
 function werkbonAddItemById(id) {
@@ -2502,27 +2535,12 @@ function werkbonRemoveItem(id) {
   if (idx !== -1) _werkbon.ids.splice(idx, 1);
   if (_werkbon.done && _werkbon.done[id]) delete _werkbon.done[id];
   _wbSave();
-  _wbRenderItems();
+  renderLabelsTab();
+  _updateLabelBtn(id);
 }
 
 function werkbonProceedToCheck() {
-  if (_werkbon.ids.length === 0) return;
-  document.getElementById("wbPhaseScan").style.display = "none";
-  document.getElementById("wbPhaseCheck").style.display = "";
-  const naam = document.getElementById("wbNaam");
-  const datum = document.getElementById("wbDatum");
-  if (naam && !naam.value) {
-    try { naam.value = safeGet("ekast-device", "") || ""; } catch (e) {}
-  }
-  if (datum && !datum.value) datum.value = todayISO();
-  _wbHighlightAction(_werkbon.action || "ok");
-  _wbRenderChecklist();
-}
-
-function werkbonBackToScan() {
-  document.getElementById("wbPhaseCheck").style.display = "none";
-  document.getElementById("wbPhaseScan").style.display = "";
-  _wbRenderItems();
+  openAfwerkenModal();
 }
 
 function werkbonSetAction(action) {
@@ -2583,71 +2601,29 @@ function _werkbonFinalizeNow(items, total, doneCount) {
     }
     _werkbon = _WB_DEFAULT();
     _wbSave();
-    closeWerkbon();
-    showToast("Werkbon afgesloten");
+    closeAfwerkenModal();
+    renderLabelsTab();
+    refreshAllLabelBtns();
+    showToast("Labels afgesloten");
   } finally {
     setTimeout(function() { _werkbonFinalizing = false; }, 800);
   }
 }
 
 function werkbonClearAll() {
-  if ((_werkbon.ids || []).length === 0) { closeWerkbon(); return; }
+  if ((_werkbon.ids || []).length === 0) return;
   showConfirm(
-    "Werkbon leegmaken? Alle " + _werkbon.ids.length + " toegevoegde kasten worden uit de werkbon gehaald (statuswijzigingen die je al hebt doorgevoerd blijven bewaard).",
+    "Lijst leegmaken? Alle " + _werkbon.ids.length + " verzamelde labels worden verwijderd (statuswijzigingen die je al hebt doorgevoerd blijven bewaard).",
     function() {
       _werkbon = _WB_DEFAULT();
       _wbSave();
-      _wbRenderItems();
-      _wbRenderChecklist();
-      // Reset naar fase 1
-      const p1 = document.getElementById("wbPhaseScan");
-      const p2 = document.getElementById("wbPhaseCheck");
-      if (p1) p1.style.display = "";
-      if (p2) p2.style.display = "none";
-      showToast("Werkbon leeggemaakt");
+      renderLabelsTab();
+      refreshAllLabelBtns();
+      showToast("Lijst leeggemaakt");
     }
   );
 }
 
-// ---------- Render: lijst van bonnen in fase 1 ----------
-function _wbRenderItems() {
-  const list = document.getElementById("wbItemsList");
-  const btn = document.getElementById("wbToCheckBtn");
-  if (!list) return;
-  list.textContent = "";
-  const items = _wbResolveItems();
-  if (btn) btn.disabled = items.length === 0;
-
-  if (items.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "wb-empty";
-    empty.textContent = "Nog geen kasten toegevoegd. Scan een bon of zoek handmatig.";
-    list.appendChild(empty);
-    return;
-  }
-
-  // Groeperen per ruimte (volgorde-optimalisatie #12)
-  const groups = {};
-  const order = [];
-  for (let i = 0; i < items.length; i++) {
-    const loc = items[i].location || "(geen ruimte)";
-    if (!groups[loc]) { groups[loc] = []; order.push(loc); }
-    groups[loc].push(items[i]);
-  }
-  order.sort(function(a, b) { return a.localeCompare(b); });
-
-  for (let g = 0; g < order.length; g++) {
-    const loc = order[g];
-    const groupHeader = document.createElement("div");
-    groupHeader.className = "wb-group-header";
-    groupHeader.textContent = "📍 " + loc + " (" + groups[loc].length + ")";
-    list.appendChild(groupHeader);
-    groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
-    for (let i = 0; i < groups[loc].length; i++) {
-      list.appendChild(_wbItemRow(groups[loc][i], false));
-    }
-  }
-}
 
 function _wbItemRow(item, isChecklistRow) {
   const row = document.createElement("div");
@@ -2740,80 +2716,6 @@ function _wbRenderChecklist() {
   }
 }
 
-// ---------- Handmatig zoeken in fase 1 ----------
-let _wbManualTimer = null;
-function werkbonManualInput(value) {
-  clearTimeout(_wbManualTimer);
-  _wbManualTimer = setTimeout(function() { _wbManualSearchNow(value); }, 120);
-}
-
-function _wbManualSearchNow(value) {
-  const wrap = document.getElementById("wbManualSuggest");
-  if (!wrap) return;
-  const v = String(value || "").trim();
-  if (!v) { _wbHideManualSuggest(); return; }
-  const qNormCode = _normCode(v);
-  const qNormText = _normText(v);
-  const scored = [];
-  for (let i = 0; i < data.length; i++) {
-    if (_werkbon.ids.indexOf(data[i].id) !== -1) continue; // al toegevoegd? oversla
-    const s = _scoreItem(data[i], qNormCode, qNormText);
-    if (s >= 0) scored.push({ item: data[i], score: s });
-  }
-  scored.sort(function(a, b) { return b.score - a.score; });
-  wrap.textContent = "";
-  if (scored.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "wb-manual-empty";
-    empty.textContent = "Geen kast gevonden";
-    wrap.appendChild(empty);
-    wrap.style.display = "";
-    return;
-  }
-  const top = scored.slice(0, 8);
-  for (let i = 0; i < top.length; i++) {
-    const it = top[i].item;
-    const opt = document.createElement("button");
-    opt.type = "button";
-    opt.className = "wb-manual-opt";
-    const c = document.createElement("div");
-    c.className = "wb-manual-opt-code";
-    c.textContent = it.code || "(zonder code)";
-    const m = document.createElement("div");
-    m.className = "wb-manual-opt-meta";
-    m.textContent = (it.location || "?") + (it.note ? " · " + it.note : "");
-    opt.appendChild(c);
-    opt.appendChild(m);
-    // mousedown vuurt voor input.blur — preventDefault zorgt dat de
-    // input z'n focus behoudt zodat blur-event de dropdown niet
-    // dichttrekt voor click verwerkt is.
-    opt.addEventListener("mousedown", function(e) { e.preventDefault(); });
-    opt.onclick = (function(id) {
-      return function() {
-        werkbonAddItemById(id);
-        const inp = document.getElementById("wbManualInput");
-        if (inp) { inp.value = ""; try { inp.focus(); } catch (e) {} }
-        _wbHideManualSuggest();
-        _wbRenderItems();
-      };
-    })(it.id);
-    wrap.appendChild(opt);
-  }
-  wrap.style.display = "";
-}
-
-function _wbHideManualSuggest() {
-  const wrap = document.getElementById("wbManualSuggest");
-  if (wrap) { wrap.style.display = "none"; wrap.textContent = ""; }
-}
-
-// Sluit de suggesties bij verlies van focus, met kleine delay zodat
-// een tap op een suggestie nog kan landen voor we ze verbergen.
-let _wbBlurTimer = null;
-function werkbonManualBlur() {
-  clearTimeout(_wbBlurTimer);
-  _wbBlurTimer = setTimeout(function() { _wbHideManualSuggest(); }, 180);
-}
 
 // ============================================================
 // START
