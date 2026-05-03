@@ -102,7 +102,8 @@
     </div>
     <div id="labelsListContainer" class="labels-list-container"></div>
     <div class="labels-footer" id="labelsFooter" style="display:none">
-      <button class="btn-primary" type="button" onclick="openAfwerkenModal()" style="margin-top:0">&rarr; Afwerken</button>
+      <div class="wb-footer-progress" id="wbFooterProgress"></div>
+      <button class="btn-primary" type="button" onclick="openAfwerkenModal()" style="margin-top:0">&#10003; Klaar</button>
     </div>
   </div>
 
@@ -138,30 +139,19 @@
 <!-- Afwerken modal -->
 <div class="modal-overlay" id="werkbonModal" onclick="if(event.target===this)closeAfwerkenModal()">
   <div class="modal" style="max-width:420px;">
-    <div id="wbPhaseCheck">
-      <div class="modal-title">&#128203; Labels afwerken</div>
-      <div class="form-group">
-        <label>Jouw naam</label>
-        <input type="text" id="wbNaam" autocomplete="off" maxlength="50">
-      </div>
-      <div class="form-group">
-        <label>Datum</label>
-        <input type="date" id="wbDatum" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label>Actie per kast</label>
-        <div class="wb-action-pick" id="wbActionPick">
-          <button type="button" class="wb-action-btn active" data-action="ok" onclick="werkbonSetAction('ok')">&#9888; Veiligstellen</button>
-          <button type="button" class="wb-action-btn" data-action="losgekoppeld" onclick="werkbonSetAction('losgekoppeld')">&#9888; Losgekoppeld</button>
-          <button type="button" class="wb-action-btn" data-action="" onclick="werkbonSetAction('')">&#9889; In bedrijf</button>
-        </div>
-      </div>
-      <div class="wb-progress" id="wbProgress">0 / 0 &#10004;</div>
-      <div id="wbCheckList" class="wb-checklist"></div>
-      <div class="modal-btns">
-        <button class="btn-cancel" type="button" onclick="closeAfwerkenModal()">&larr; Terug</button>
-        <button class="btn-primary" type="button" onclick="werkbonFinalize()" style="margin-top:0;">Labels afsluiten</button>
-      </div>
+    <div class="modal-title">&#10003; Labels afsluiten</div>
+    <div class="form-group">
+      <label>Jouw naam</label>
+      <input type="text" id="wbNaam" autocomplete="off" maxlength="50">
+    </div>
+    <div class="form-group">
+      <label>Datum</label>
+      <input type="date" id="wbDatum" autocomplete="off">
+    </div>
+    <div class="wb-progress" id="wbProgress"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" type="button" onclick="closeAfwerkenModal()">&larr; Terug</button>
+      <button class="btn-primary" type="button" onclick="werkbonFinalize()" style="margin-top:0;">Bevestigen</button>
     </div>
   </div>
 </div>

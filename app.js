@@ -2472,6 +2472,9 @@ function renderLabelsTab() {
     if (n > 0) countEl.classList.remove("hidden"); else countEl.classList.add("hidden");
   }
   if (footer) footer.style.display = n > 0 ? "" : "none";
+  const markedCount = items.filter(function(it) { return it.id in _werkbon.done; }).length;
+  const fpEl = document.getElementById("wbFooterProgress");
+  if (fpEl) fpEl.textContent = n > 0 ? (markedCount + " / " + n + " kasten gemarkeerd") : "";
 
   if (n === 0) {
     const empty = document.createElement("div");
@@ -2539,8 +2542,10 @@ function openAfwerkenModal() {
     try { naam.value = safeGet("ekast-device", "") || ""; } catch (e) {}
   }
   if (datum && !datum.value) datum.value = todayISO();
-  _wbHighlightAction(_werkbon.action || "ok");
-  _wbRenderChecklist();
+  const items = _wbResolveItems();
+  const markedCount = items.filter(function(it) { return it.id in _werkbon.done; }).length;
+  const prog = document.getElementById("wbProgress");
+  if (prog) prog.textContent = markedCount + " / " + items.length + " kasten gemarkeerd";
   m.classList.add("open");
 }
 
@@ -2588,65 +2593,23 @@ function werkbonRemoveItem(id) {
   _updateLabelBtn(id);
 }
 
-function werkbonProceedToCheck() {
-  openAfwerkenModal();
-}
 
-function werkbonSetAction(action) {
-  if (_WB_VALID_ACTIONS.indexOf(action) === -1) return;
-  _werkbon.action = action;
-  _wbSave();
-  _wbHighlightAction(action);
-}
-
-function _wbHighlightAction(action) {
-  const wrap = document.getElementById("wbActionPick");
-  if (!wrap) return;
-  const btns = wrap.querySelectorAll(".wb-action-btn");
-  for (let i = 0; i < btns.length; i++) {
-    btns[i].classList.toggle("active", btns[i].getAttribute("data-action") === action);
-  }
-}
-
-async function werkbonApplyOne(id) {
+let _werkbonFinalizing = false;
+async function werkbonFinalize() {
+  if (_werkbonFinalizing) return;
   const naamEl = document.getElementById("wbNaam");
   const datumEl = document.getElementById("wbDatum");
   const naam = naamEl ? naamEl.value.trim() : "";
   const datum = datumEl ? datumEl.value.trim() : "";
-  if (!naam) { showToast("Vul eerst je naam in"); naamEl && naamEl.focus(); return; }
-  if (!datum) { showToast("Vul eerst de datum in"); datumEl && datumEl.focus(); return; }
-  if (_werkbon.done[id]) return; // al gedaan — voorkomt dubbele tap
-  const action = _werkbon.action || "ok";
-  // Optimistisch updaten zodat snelle taps niet hetzelfde item twee keer
-  // afvuren tijdens netwerk-delay. setStatus gooit zelf nooit (queue bij
-  // offline) dus rollback is niet nodig.
-  _werkbon.done[id] = action;
-  _wbSave();
-  _wbRenderChecklist();
-  await setStatus(id, action, naam, datum);
-}
-
-let _werkbonFinalizing = false;
-function werkbonFinalize() {
-  if (_werkbonFinalizing) return; // dubbele tap onderdrukken
+  if (!naam) { showToast("Vul eerst je naam in", true); naamEl && naamEl.focus(); return; }
+  if (!datum) { showToast("Vul eerst de datum in", true); datumEl && datumEl.focus(); return; }
   const items = _wbResolveItems();
-  const total = items.length;
-  const doneCount = items.filter(function(it) { return _werkbon.done[it.id]; }).length;
-  if (doneCount < total) {
-    showConfirm(
-      "Werkbon is nog niet volledig (" + doneCount + "/" + total + " gedaan). Toch afsluiten?",
-      function() { _werkbonFinalizeNow(items, total, doneCount); }
-    );
-    return;
-  }
-  _werkbonFinalizeNow(items, total, doneCount);
-}
-
-function _werkbonFinalizeNow(items, total, doneCount) {
+  const markedItems = items.filter(function(it) { return it.id in _werkbon.done; });
+  if (markedItems.length === 0) { showToast("Markeer eerst kasten in de lijst", true); return; }
   _werkbonFinalizing = true;
   try {
-    if (_werkbon.vergunning && doneCount > 0) {
-      try { logAction("Werkbon afgesloten — " + doneCount + "/" + total, _werkbon.vergunning, "", "Logboek Status"); } catch (e) {}
+    for (let i = 0; i < markedItems.length; i++) {
+      await setStatus(markedItems[i].id, _werkbon.done[markedItems[i].id], naam, datum);
     }
     _werkbon = _WB_DEFAULT();
     _wbSave();
@@ -2679,13 +2642,12 @@ function _wbItemRow(item, isChecklistRow) {
   row.className = isChecklistRow ? "wb-check-row" : "wb-item-row";
 
   if (isChecklistRow) {
-    const isDone = !!_werkbon.done[item.id];
+    const isDone = (item.id in _werkbon.done);
     const cb = document.createElement("button");
     cb.type = "button";
     cb.className = "wb-checkbox" + (isDone ? " done" : "");
-    cb.textContent = isDone ? "✓" : "";
+    cb.textContent = isDone ? "\u2713" : "";
     cb.setAttribute("aria-label", isDone ? "Afgerond" : "Markeer als gedaan");
-    cb.onclick = function() { if (!isDone) werkbonApplyOne(item.id); };
     row.appendChild(cb);
   }
 
@@ -2704,9 +2666,31 @@ function _wbItemRow(item, isChecklistRow) {
   if (item.position) {
     const p = document.createElement("div");
     p.className = "wb-item-pos";
-    p.textContent = "📍 " + item.position;
+    p.textContent = "\uD83D\uDCCD " + item.position;
     info.appendChild(p);
   }
+
+  if (!isChecklistRow) {
+    const curAction = (item.id in _werkbon.done) ? _werkbon.done[item.id] : null;
+    const statusRow = document.createElement("div");
+    statusRow.className = "wb-item-status-row";
+    [
+      { action: "ok",           label: "\u26A0 Veiliggesteld", selCls: "sel-ok"   },
+      { action: "losgekoppeld", label: "\u26A0 Losgekoppeld",  selCls: "sel-los"  },
+      { action: "",             label: "\u26A1 In bedrijf",    selCls: "sel-vrij" }
+    ].forEach(function(opt) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "wb-item-sbtn" + (curAction === opt.action && curAction !== null ? " " + opt.selCls : "");
+      btn.textContent = opt.label;
+      (function(a) {
+        btn.addEventListener("click", function() { wbSetItemStatus(item.id, a); });
+      })(opt.action);
+      statusRow.appendChild(btn);
+    });
+    info.appendChild(statusRow);
+  }
+
   row.appendChild(info);
 
   if (!isChecklistRow) {
@@ -2714,56 +2698,20 @@ function _wbItemRow(item, isChecklistRow) {
     del.type = "button";
     del.className = "wb-item-del";
     del.setAttribute("aria-label", "Verwijderen uit werkbon");
-    del.textContent = "✕";
+    del.textContent = "\u2715";
     del.onclick = function() { werkbonRemoveItem(item.id); };
     row.appendChild(del);
   }
   return row;
 }
 
-// ---------- Render: checklist in fase 2 ----------
-function _wbRenderChecklist() {
-  const list = document.getElementById("wbCheckList");
-  const prog = document.getElementById("wbProgress");
-  if (!list) return;
-  list.textContent = "";
-  const items = _wbResolveItems();
-  const total = items.length;
-  const doneCount = items.filter(function(it) { return _werkbon.done[it.id]; }).length;
-  if (prog) prog.textContent = doneCount + " / " + total + " ✓";
-
-  if (total === 0) {
-    const empty = document.createElement("div");
-    empty.className = "wb-empty";
-    empty.textContent = "Geen kasten in deze werkbon.";
-    list.appendChild(empty);
-    return;
-  }
-
-  // Zelfde groepering als fase 1 — ruimte voor ruimte.
-  const groups = {};
-  const order = [];
-  for (let i = 0; i < items.length; i++) {
-    const loc = items[i].location || "(geen ruimte)";
-    if (!groups[loc]) { groups[loc] = []; order.push(loc); }
-    groups[loc].push(items[i]);
-  }
-  order.sort(function(a, b) { return a.localeCompare(b); });
-
-  for (let g = 0; g < order.length; g++) {
-    const loc = order[g];
-    const arr = groups[loc];
-    const groupDone = arr.filter(function(it) { return _werkbon.done[it.id]; }).length;
-    const groupHeader = document.createElement("div");
-    groupHeader.className = "wb-group-header";
-    groupHeader.textContent = "📍 " + loc + " (" + groupDone + "/" + arr.length + ")";
-    list.appendChild(groupHeader);
-    arr.sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
-    for (let i = 0; i < arr.length; i++) {
-      list.appendChild(_wbItemRow(arr[i], true));
-    }
-  }
+function wbSetItemStatus(id, action) {
+  _werkbon.done[id] = action;
+  _wbSave();
+  renderLabelsTab();
 }
+
+
 
 
 // ============================================================
