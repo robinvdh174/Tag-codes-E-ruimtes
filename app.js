@@ -2638,10 +2638,9 @@ function werkbonClearAll() {
 
 
 function _wbItemRow(item, isChecklistRow) {
-  const row = document.createElement("div");
-  row.className = isChecklistRow ? "wb-check-row" : "wb-item-row";
-
   if (isChecklistRow) {
+    const row = document.createElement("div");
+    row.className = "wb-check-row";
     const isDone = (item.id in _werkbon.done);
     const cb = document.createElement("button");
     cb.type = "button";
@@ -2649,60 +2648,122 @@ function _wbItemRow(item, isChecklistRow) {
     cb.textContent = isDone ? "\u2713" : "";
     cb.setAttribute("aria-label", isDone ? "Afgerond" : "Markeer als gedaan");
     row.appendChild(cb);
+    const info = document.createElement("div");
+    info.className = "wb-item-info";
+    const codeEl = document.createElement("div");
+    codeEl.className = "wb-item-code";
+    codeEl.textContent = item.code || "(zonder code)";
+    info.appendChild(codeEl);
+    if (item.note) {
+      const n = document.createElement("div");
+      n.className = "wb-item-note";
+      n.textContent = item.note;
+      info.appendChild(n);
+    }
+    if (item.position) {
+      const p = document.createElement("div");
+      p.className = "wb-item-pos";
+      p.textContent = "\uD83D\uDCCD " + item.position;
+      info.appendChild(p);
+    }
+    row.appendChild(info);
+    return row;
   }
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.cursor = "default";
+
+  const curAction = (item.id in _werkbon.done) ? _werkbon.done[item.id] : null;
+  const displayStatus = curAction !== null ? curAction : (item.status || "");
+  if (displayStatus === "") {
+    card.style.borderLeftColor = "var(--success)";
+  } else if (displayStatus === "losgekoppeld") {
+    card.style.borderLeftColor = "var(--danger)";
+  }
+
+  const top = document.createElement("div");
+  top.className = "card-top";
 
   const info = document.createElement("div");
-  info.className = "wb-item-info";
-  const code = document.createElement("div");
-  code.className = "wb-item-code";
-  code.textContent = item.code || "(zonder code)";
-  info.appendChild(code);
-  if (item.note) {
-    const n = document.createElement("div");
-    n.className = "wb-item-note";
-    n.textContent = item.note;
-    info.appendChild(n);
-  }
+  info.className = "card-info";
+
+  const codeEl = document.createElement("div");
+  codeEl.className = "code";
+  codeEl.textContent = item.code || "(zonder code)";
+  info.appendChild(codeEl);
+
+  const loc = document.createElement("div");
+  loc.className = "loc";
+  loc.textContent = item.location || "";
+  info.appendChild(loc);
+
   if (item.position) {
-    const p = document.createElement("div");
-    p.className = "wb-item-pos";
-    p.textContent = "\uD83D\uDCCD " + item.position;
-    info.appendChild(p);
+    const pos = document.createElement("div");
+    pos.className = "pos";
+    pos.textContent = "\uD83D\uDCCD " + item.position;
+    info.appendChild(pos);
+  }
+  if (item.note) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = "\uD83D\uDCAC " + item.note;
+    info.appendChild(note);
   }
 
-  if (!isChecklistRow) {
-    const curAction = (item.id in _werkbon.done) ? _werkbon.done[item.id] : null;
-    const statusRow = document.createElement("div");
-    statusRow.className = "wb-item-status-row";
-    [
-      { action: "ok",           label: "\u26A0 Veiliggesteld", selCls: "sel-ok"   },
-      { action: "losgekoppeld", label: "\u26A0 Losgekoppeld",  selCls: "sel-los"  },
-      { action: "",             label: "\u26A1 In bedrijf",    selCls: "sel-vrij" }
-    ].forEach(function(opt) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "wb-item-sbtn" + (curAction === opt.action && curAction !== null ? " " + opt.selCls : "");
-      btn.textContent = opt.label;
-      (function(a) {
-        btn.addEventListener("click", function() { wbSetItemStatus(item.id, a); });
-      })(opt.action);
-      statusRow.appendChild(btn);
-    });
-    info.appendChild(statusRow);
-  }
+  top.appendChild(info);
 
-  row.appendChild(info);
+  const rightCol = document.createElement("div");
+  rightCol.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;margin-left:.5rem;gap:.35rem;";
 
-  if (!isChecklistRow) {
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "wb-item-del";
-    del.setAttribute("aria-label", "Verwijderen uit werkbon");
-    del.textContent = "\u2715";
-    del.onclick = function() { werkbonRemoveItem(item.id); };
-    row.appendChild(del);
-  }
-  return row;
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "wb-item-del";
+  del.setAttribute("aria-label", "Verwijderen uit labels");
+  del.textContent = "\u2715";
+  del.onclick = function() { werkbonRemoveItem(item.id); };
+  rightCol.appendChild(del);
+
+  const statusWrap = document.createElement("div");
+  statusWrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;";
+
+  const statusBtn = document.createElement("button");
+  statusBtn.type = "button";
+  statusBtn.className = "sbtn-veilig" + (displayStatus === "ok" ? " secured" : displayStatus === "losgekoppeld" ? " losgekoppeld" : "");
+  statusBtn.textContent = displayStatus === "ok" ? "\u26A0 Veiliggesteld"
+                       : displayStatus === "losgekoppeld" ? "\u26A0 Losgekoppeld"
+                       : "\u26A1 In bedrijf";
+  statusBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    openWbStatusKeuze(item.id);
+  });
+  statusWrap.appendChild(statusBtn);
+  rightCol.appendChild(statusWrap);
+  top.appendChild(rightCol);
+  card.appendChild(top);
+  return card;
+}
+
+function openWbStatusKeuze(id) {
+  const btns = document.getElementById("statusPopupBtns");
+  btns.innerHTML = "";
+  [
+    { action: "ok",           label: "\u26A0 Veiliggesteld", cls: "status-btn-veilig" },
+    { action: "losgekoppeld", label: "\u26A0 Losgekoppeld",  cls: "status-btn-los"   },
+    { action: "",             label: "\u26A1 In bedrijf",    cls: "status-btn-vrij"  }
+  ].forEach(function(opt) {
+    const btn = document.createElement("button");
+    btn.className = "status-btn-keuze " + opt.cls;
+    btn.textContent = opt.label;
+    (function(a) {
+      btn.addEventListener("click", function() {
+        document.getElementById("statusPopup").classList.remove("open");
+        wbSetItemStatus(id, a);
+      });
+    })(opt.action);
+    btns.appendChild(btn);
+  });
+  document.getElementById("statusPopup").classList.add("open");
 }
 
 function wbSetItemStatus(id, action) {
