@@ -1,4 +1,4 @@
-:root{--bg:#0d0f12;--surface:#151820;--border:#2a3045;--accent:#f0a500;--text:#dde3f0;--muted:#5a6380;--danger:#e03c3c;--success:#2ecc71;}
+:root{--bg:#0d0f12;--surface:#151820;--border:#2a3045;--accent:#f0a500;--text:#dde3f0;--muted:#5a6380;--danger:#e03c3c;--success:#2ecc71;--header-h:64px;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:sans-serif;padding-bottom:2rem;}
 header{background:var(--surface);border-bottom:2px solid var(--accent);padding:.75rem 1.2rem;position:sticky;top:0;z-index:100;}
@@ -18,7 +18,7 @@ p.sub{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing
 .sync-bar{position:absolute;bottom:0;left:0;height:2px;width:0%;background:currentColor;border-radius:2px;}
 .sync-badge.syncing .sync-bar{animation:loadbar 1.4s ease-in-out infinite;}
 @keyframes loadbar{0%{left:0%;width:0%;}50%{left:10%;width:70%;}100%{left:100%;width:0%;}}
-.tabs-pill-wrap{padding:8px 12px 4px;background:var(--bg);position:sticky;top:0;z-index:99;transition:transform 0.25s ease;}
+.tabs-pill-wrap{padding:8px 12px 4px;background:var(--bg);position:sticky;top:var(--header-h);z-index:99;transition:transform 0.25s ease;}
 .tabs-pill-wrap.tabs-hidden{transform:translateY(-120%);}
 .tabs-pill-container{background:var(--surface);border-radius:12px;padding:4px;display:flex;position:relative;}
 .tabs-pill{position:absolute;top:4px;bottom:4px;background:var(--surface);border-radius:9px;border:1px solid #2a2a2a;transition:left 0.22s cubic-bezier(.4,0,.2,1);pointer-events:none;z-index:0;}
@@ -215,3 +215,16 @@ input[type=date]:focus{border-color:var(--accent);}
 .wb-item-sbtn.sel-vrij{background:#1a3a2a;color:var(--success);border-color:var(--success);}
 .list-room-header{grid-column:1/-1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.09em;padding:.55rem .2rem .35rem;border-bottom:2px solid var(--accent);margin-top:1.1rem;margin-bottom:.5rem;}
 .list-room-header:first-child{margin-top:0;}
+/* ===== TOEGANKELIJKHEID ===== */
+/* Zichtbare focus voor toetsenbord-gebruik zonder muis-clicks te verstoren. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+.card:focus-visible{outline-offset:-2px;}
+.tab-pill:focus-visible{outline-offset:-3px;border-radius:9px;}
+/* Touch-targets minimaal 32x32 (WCAG 2.5.5 / Apple HIG). */
+.btn-info-loc{min-width:28px;min-height:28px;display:inline-flex;align-items:center;justify-content:center;}
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}
+  .tabs-pill-wrap{transition:none;}
+  .scan-spinner{animation:none;border-top-color:var(--accent);}
+}

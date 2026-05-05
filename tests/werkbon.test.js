@@ -46,7 +46,17 @@ global.document = {
       onclick: null
     };
   },
-  createTextNode: function(t) { return { textContent: t }; }
+  createTextNode: function(t) { return { textContent: t }; },
+  // refreshAllLabelBtns en andere DOM-helpers gebruiken document.querySelectorAll;
+  // we hebben geen echte DOM nodig, lege NodeList volstaat.
+  querySelectorAll: function() { return []; },
+  querySelector: function() { return null; },
+  createDocumentFragment: function() {
+    return {
+      _children: [],
+      appendChild: function(c) { this._children.push(c); }
+    };
+  }
 };
 // In tests willen we geen écht-async gedrag; voer callbacks meteen uit
 // zodat flags zoals _werkbonFinalizing tussen tests netjes resetten.
@@ -79,6 +89,12 @@ global.openScan = function() {};
 global.closeScan = function() {};
 global.openWerkbon = function() {};
 global.closeWerkbon = function() {};
+
+// ROOM_INFO wordt buiten het werkbon-blok gedeclareerd in app.js maar wordt
+// wel aangeroepen door renderLabelsTab. In de test gebruiken we een lege
+// stub zodat geen enkele ruimte een ⓘ-info-knop opbouwt — het gaat ons hier
+// puur om de werkbon-state-logica, niet om de UI-rendering.
+global.ROOM_INFO = {};
 
 // Onderdruk console.warn-spam tijdens negatieve tests (bijv. corrupte JSON).
 const _origWarn = console.warn;
@@ -264,17 +280,17 @@ function resetWerkbon() {
   eq(_werkbon.action, "ok", "Default action");
 }
 
-// ---------- 14. werkbonSetAction valideert input ----------
+// ---------- 14. wbSetItemStatus: per-item actie + valide waardes ----------
 {
+  setData([{ id: "1", code: "A", location: "L1" }]);
   resetWerkbon();
-  werkbonSetAction("ok");
-  eq(_werkbon.action, "ok", "Geldige actie 'ok' geaccepteerd");
-  werkbonSetAction("losgekoppeld");
-  eq(_werkbon.action, "losgekoppeld", "'losgekoppeld' geaccepteerd");
-  werkbonSetAction("");
-  eq(_werkbon.action, "", "Lege string ('in bedrijf') geaccepteerd");
-  werkbonSetAction("evil");
-  eq(_werkbon.action, "", "Ongeldige actie genegeerd");
+  werkbonAddItemByCode("A");
+  wbSetItemStatus("1", "ok");
+  eq(_werkbon.done["1"], "ok", "wbSetItemStatus: 'ok' geaccepteerd");
+  wbSetItemStatus("1", "losgekoppeld");
+  eq(_werkbon.done["1"], "losgekoppeld", "wbSetItemStatus: 'losgekoppeld' geaccepteerd");
+  wbSetItemStatus("1", "");
+  eq(_werkbon.done["1"], "", "wbSetItemStatus: '' (in bedrijf) geaccepteerd");
 }
 
 // ---------- 15. werkbonAddItemById validatie ----------
@@ -288,7 +304,7 @@ function resetWerkbon() {
   eq(werkbonAddItemById(null), false, "null id geweigerd");
 }
 
-// ---------- 16. Persistentie: state overleeft 'restart' ----------
+// ---------- 16. Persistentie: ids + done overleven 'restart' ----------
 {
   setData([
     { id: "1", code: "A", location: "L1" },
@@ -297,25 +313,30 @@ function resetWerkbon() {
   resetWerkbon();
   werkbonAddItemByCode("A");
   werkbonAddItemByCode("B");
-  werkbonSetVergunning("MA12345");
-  werkbonSetAction("losgekoppeld");
+  wbSetItemStatus("1", "ok");
+  wbSetItemStatus("2", "losgekoppeld");
 
   // Simuleer pagina-reload door state te wissen en opnieuw te laden
   _werkbon = _WB_DEFAULT();
   _wbLoad();
 
-  eq(_werkbon.ids.length, 2, "State overleeft reload");
-  eq(_werkbon.vergunning, "MA12345", "Vergunning overleeft");
-  eq(_werkbon.action, "losgekoppeld", "Actie overleeft");
+  eq(_werkbon.ids.length, 2, "Ids overleven reload");
+  eq(_werkbon.done["1"], "ok", "Actie van item 1 overleeft");
+  eq(_werkbon.done["2"], "losgekoppeld", "Actie van item 2 overleeft");
 }
 
-// ---------- 17. werkbonSetVergunning trimt en limit ----------
+// ---------- 17. _wbLoad valideert dat done geen array is ----------
 {
-  resetWerkbon();
-  werkbonSetVergunning("  MA001  ");
-  eq(_werkbon.vergunning, "MA001", "Whitespace getrimd");
-  werkbonSetVergunning("X".repeat(100));
-  eq(_werkbon.vergunning.length, 32, "Maxlength 32 enforced");
+  // Done als array moet teruggezet worden naar object
+  _store["ekast_werkbon"] = JSON.stringify({
+    ids: ["x"],
+    action: "ok",
+    done: ["bogus", "values"]
+  });
+  _werkbon = _WB_DEFAULT();
+  _wbLoad();
+  eq(Array.isArray(_werkbon.done), false, "done is geen array meer na load");
+  eq(typeof _werkbon.done, "object", "done is een (object) map");
 }
 
 // ---------- 18. _wbResolveItems behoudt volgorde van toevoegen ----------
@@ -334,87 +355,119 @@ function resetWerkbon() {
      "Volgorde van toevoegen behouden in resolve");
 }
 
-// ---------- 19. werkbonFinalize: volledige werkbon zonder confirm ----------
-{
-  setData([{ id: "1", code: "A", location: "L1" }]);
-  resetWerkbon();
-  werkbonAddItemByCode("A");
-  _werkbon.done["1"] = "ok"; // markeer als gedaan
-  _confirmAutoYes = false; // confirm zou geweigerd worden
-  werkbonFinalize();
-  // Volledig -> géén confirm nodig, gewoon afsluiten
-  eq(_werkbon.ids.length, 0, "Volledig: state gereset na finalize");
+// Helper: vul naam + datum (verplicht in werkbonFinalize) zodat de
+// validatie-gates niet onbedoeld in de weg zitten van state-tests.
+// Lege string betekent expliciet leeg (om de validatie zelf te testen).
+function setNaamDatum(naam, datum) {
+  document.getElementById("wbNaam").value = naam === undefined ? "Tester" : naam;
+  document.getElementById("wbDatum").value = datum === undefined ? "2026-04-29" : datum;
 }
 
-// ---------- 20. werkbonFinalize: onvolledig + confirm Ja ----------
-{
-  setData([{ id: "1", code: "A", location: "L1" }]);
-  resetWerkbon();
-  werkbonAddItemByCode("A");
-  _confirmAutoYes = true;
-  werkbonFinalize();
-  eq(_werkbon.ids.length, 0, "Onvolledig + ja -> state gereset");
-}
+// Tests 19-25 omvatten ook werkbonFinalize, dat async is. We wikkelen
+// de hele staart in een async IIFE en awaiten elke finalize-call zodat
+// state-asserties pas lopen nadat de promise-keten echt is afgerond.
+(async function runAsyncTail() {
+  // ---------- 19. werkbonFinalize: alle items gemarkeerd → lijst leeg ----------
+  {
+    setData([{ id: "1", code: "A", location: "L1" }]);
+    resetWerkbon();
+    werkbonAddItemByCode("A");
+    _werkbon.done["1"] = "ok"; // markeer als gedaan
+    setNaamDatum();
+    await werkbonFinalize();
+    eq(_werkbon.ids.length, 0, "Alles gemarkeerd: lijst leeg na finalize");
+    eq(Object.keys(_werkbon.done).length, 0, "Alles gemarkeerd: done-map opgeruimd");
+  }
 
-// ---------- 21. werkbonFinalize: onvolledig + confirm Nee ----------
-{
-  setData([{ id: "1", code: "A", location: "L1" }]);
-  resetWerkbon();
-  werkbonAddItemByCode("A");
-  _confirmAutoYes = false;
-  werkbonFinalize();
-  eq(_werkbon.ids.length, 1, "Onvolledig + nee -> state behouden");
-  _confirmAutoYes = true; // herstellen voor volgende tests
-}
+  // ---------- 20. werkbonFinalize: deels gemarkeerd → alleen verwerkte verwijderd ----------
+  {
+    setData([
+      { id: "1", code: "A", location: "L1" },
+      { id: "2", code: "B", location: "L2" }
+    ]);
+    resetWerkbon();
+    werkbonAddItemByCode("A");
+    werkbonAddItemByCode("B");
+    _werkbon.done["1"] = "ok"; // alleen item 1 gemarkeerd
+    setNaamDatum();
+    await werkbonFinalize();
+    eq(_werkbon.ids.length, 1, "Deels gemarkeerd: ongemarkeerde blijft staan");
+    eq(_werkbon.ids[0], "2", "Item 2 (ongemarkeerd) is nog in de stapel");
+    eq("1" in _werkbon.done, false, "Done-state van verwerkte item verwijderd");
+  }
 
-// ---------- 22. werkbonClearAll: leegmaakt zonder finalize ----------
-{
-  setData([
-    { id: "1", code: "A", location: "L1" },
-    { id: "2", code: "B", location: "L2" }
-  ]);
-  resetWerkbon();
-  werkbonAddItemByCode("A");
-  werkbonAddItemByCode("B");
-  _werkbon.done["1"] = "ok";
-  _confirmAutoYes = true;
-  werkbonClearAll();
-  eq(_werkbon.ids.length, 0, "ClearAll: ids leeg");
-  eq(Object.keys(_werkbon.done).length, 0, "ClearAll: done-map leeg");
-}
+  // ---------- 21. werkbonFinalize: niets gemarkeerd → no-op, stapel intact ----------
+  {
+    setData([{ id: "1", code: "A", location: "L1" }]);
+    resetWerkbon();
+    werkbonAddItemByCode("A");
+    setNaamDatum();
+    await werkbonFinalize();
+    eq(_werkbon.ids.length, 1, "Niets gemarkeerd: stapel ongewijzigd");
+  }
 
-// ---------- 23. werkbonClearAll: bij lege werkbon doet niets gevaarlijks ----------
-{
-  resetWerkbon();
-  // ClearAll op lege werkbon mag niet crashen
-  let err = null;
-  try { werkbonClearAll(); } catch (e) { err = e; }
-  eq(err, null, "ClearAll bij lege werkbon: geen crash");
-}
+  // ---------- 22. werkbonFinalize: verplicht naam vóór doorgaan ----------
+  {
+    setData([{ id: "1", code: "A", location: "L1" }]);
+    resetWerkbon();
+    werkbonAddItemByCode("A");
+    _werkbon.done["1"] = "ok";
+    setNaamDatum("", "2026-04-29"); // naam leeg
+    await werkbonFinalize();
+    eq(_werkbon.ids.length, 1, "Lege naam: finalize geblokkeerd, item blijft");
+  }
 
-// ---------- 24. werkbonAddItemByCode geeft id terug bij dup ----------
-{
-  setData([{ id: "x", code: "ABC", location: "L1" }]);
-  resetWerkbon();
-  werkbonAddItemByCode("ABC");
-  const r = werkbonAddItemByCode("ABC");
-  eq(r.added, false, "Dup: added=false");
-  ok(r.item != null, "Dup: item teruggegeven (zodat UI kan tonen wat er al stond)");
-  eq(r.item.id, "x", "Dup: juiste item");
-}
+  // ---------- 23. werkbonClearAll: leegmaakt alle state ----------
+  {
+    setData([
+      { id: "1", code: "A", location: "L1" },
+      { id: "2", code: "B", location: "L2" }
+    ]);
+    resetWerkbon();
+    werkbonAddItemByCode("A");
+    werkbonAddItemByCode("B");
+    _werkbon.done["1"] = "ok";
+    _confirmAutoYes = true;
+    werkbonClearAll();
+    eq(_werkbon.ids.length, 0, "ClearAll: ids leeg");
+    eq(Object.keys(_werkbon.done).length, 0, "ClearAll: done-map leeg");
+  }
 
-// ---------- 25. _wbLoad bij volledig leeg / niet-bestaand ----------
-{
-  delete _store["ekast_werkbon"];
-  _werkbon = _WB_DEFAULT();
-  _wbLoad();
-  eq(_werkbon.ids.length, 0, "Geen storage: default state");
-  eq(_werkbon.action, "ok", "Geen storage: default actie");
-  eq(_werkbon.vergunning, "", "Geen storage: lege vergunning");
-}
+  // ---------- 24. werkbonClearAll: bij lege werkbon doet niets gevaarlijks ----------
+  {
+    resetWerkbon();
+    let err = null;
+    try { werkbonClearAll(); } catch (e) { err = e; }
+    eq(err, null, "ClearAll bij lege werkbon: geen crash");
+  }
 
-// Herstel console.warn aan einde
-console.warn = _origWarn;
+  // ---------- 25. werkbonAddItemByCode geeft id terug bij dup ----------
+  {
+    setData([{ id: "x", code: "ABC", location: "L1" }]);
+    resetWerkbon();
+    werkbonAddItemByCode("ABC");
+    const r = werkbonAddItemByCode("ABC");
+    eq(r.added, false, "Dup: added=false");
+    ok(r.item != null, "Dup: item teruggegeven (zodat UI kan tonen wat er al stond)");
+    eq(r.item.id, "x", "Dup: juiste item");
+  }
 
-console.log("Werkbon-tests voltooid.");
-summary();
+  // ---------- 26. _wbLoad bij volledig leeg / niet-bestaand ----------
+  {
+    delete _store["ekast_werkbon"];
+    _werkbon = _WB_DEFAULT();
+    _wbLoad();
+    eq(_werkbon.ids.length, 0, "Geen storage: default state");
+    eq(_werkbon.action, "ok", "Geen storage: default actie");
+    eq(_werkbon.vergunning, "", "Geen storage: lege vergunning");
+  }
+
+  // Herstel console.warn aan einde
+  console.warn = _origWarn;
+
+  console.log("Werkbon-tests voltooid.");
+  summary();
+})().catch(function(e) {
+  console.error("Werkbon-tests gefaald met onverwachte fout:", e);
+  process.exit(1);
+});

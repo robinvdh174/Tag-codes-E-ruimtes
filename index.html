@@ -137,18 +137,19 @@
 </main>
 
 <!-- Afwerken modal -->
-<div class="modal-overlay" id="werkbonModal" onclick="if(event.target===this)closeAfwerkenModal()">
+<div class="modal-overlay" id="werkbonModal" onclick="if(event.target===this)closeAfwerkenModal()" role="dialog" aria-modal="true" aria-labelledby="wbModalTitle">
   <div class="modal" style="max-width:420px;">
-    <div class="modal-title">&#10003; Labels afsluiten</div>
+    <div class="modal-title" id="wbModalTitle">&#10003; Gemarkeerde kasten afwerken</div>
+    <p class="scan-help" style="margin-bottom:1rem;">Alleen gemarkeerde kasten krijgen de gekozen status. Ongemarkeerde labels blijven in je stapel staan voor later.</p>
     <div class="form-group">
-      <label>Jouw naam</label>
+      <label for="wbNaam">Jouw naam</label>
       <input type="text" id="wbNaam" autocomplete="off" maxlength="50">
     </div>
     <div class="form-group">
-      <label>Datum</label>
+      <label for="wbDatum">Datum</label>
       <input type="date" id="wbDatum" autocomplete="off">
     </div>
-    <div class="wb-progress" id="wbProgress"></div>
+    <div class="wb-progress" id="wbProgress" aria-live="polite"></div>
     <div class="modal-btns">
       <button class="btn-cancel" type="button" onclick="closeAfwerkenModal()">&larr; Terug</button>
       <button class="btn-primary" type="button" onclick="werkbonFinalize()" style="margin-top:0;">Bevestigen</button>

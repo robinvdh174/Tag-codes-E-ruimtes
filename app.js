@@ -20,7 +20,7 @@ const SYNC_INTERVAL_MS = 30000;
 // Bump dit bij elke release zodat we via screenshots kunnen verifiëren
 // of een gebruiker echt op de nieuwste versie zit (i.p.v. een
 // gecachete oude SW-versie).
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -583,6 +583,12 @@ function switchTab(name) {
   if (name === "status") renderStatus();
   if (name === "bonnen") renderLabelsTab();
   updateStatusBadge();
+  // Bij tab-switch terug naar boven scrollen — anders staat de gebruiker
+  // halverwege de vorige tab te kijken naar een nieuwe lijst die buiten
+  // beeld begint.
+  if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch(e) { window.scrollTo(0, 0); }
+  }
 }
 
 function movePill(tabName) {
@@ -2605,18 +2611,27 @@ async function werkbonFinalize() {
   if (!datum) { showToast("Vul eerst de datum in", true); datumEl && datumEl.focus(); return; }
   const items = _wbResolveItems();
   const markedItems = items.filter(function(it) { return it.id in _werkbon.done; });
-  if (markedItems.length === 0) { showToast("Markeer eerst kasten in de lijst", true); return; }
+  if (markedItems.length === 0) { showToast("Markeer eerst minstens één kast", true); return; }
   _werkbonFinalizing = true;
   try {
     for (let i = 0; i < markedItems.length; i++) {
       await setStatus(markedItems[i].id, _werkbon.done[markedItems[i].id], naam, datum);
     }
-    _werkbon = _WB_DEFAULT();
+    // Alleen de daadwerkelijk verwerkte (gemarkeerde) kasten verwijderen.
+    // Ongemarkeerde labels blijven in de stapel staan zodat de gebruiker
+    // ze in een volgende sessie kan afwerken — voorheen verloor men ze.
+    const processedIds = {};
+    for (let i = 0; i < markedItems.length; i++) processedIds[markedItems[i].id] = true;
+    _werkbon.ids = _werkbon.ids.filter(function(id) { return !processedIds[id]; });
+    for (let i = 0; i < markedItems.length; i++) delete _werkbon.done[markedItems[i].id];
     _wbSave();
     closeAfwerkenModal();
     renderLabelsTab();
     refreshAllLabelBtns();
-    showToast("Labels afgesloten");
+    const remaining = _werkbon.ids.length;
+    const verwoord = markedItems.length === 1 ? "1 kast verwerkt" : (markedItems.length + " kasten verwerkt");
+    if (remaining === 0) showToast(verwoord + " — stapel leeg");
+    else showToast(verwoord + " — " + remaining + " ongemarkeerd in de stapel");
   } finally {
     setTimeout(function() { _werkbonFinalizing = false; }, 800);
   }
@@ -2815,11 +2830,18 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
 (function() {
   var tabsWrap = document.querySelector('.tabs-pill-wrap');
   var header = document.querySelector('header');
+  if (!tabsWrap || !header) return;
   var lastY = 0;
   var ticking = false;
 
+  // We bewaren de offset zowel als inline style (voor backwards compat)
+  // als in CSS-variabele --header-h zodat de sticky-positie ook correct
+  // is BEFORE deze JS draait — anders zou de tabbalk een fractie van een
+  // seconde achter de header verdwijnen op slow phones.
   function setTop() {
-    tabsWrap.style.top = header.offsetHeight + 'px';
+    var h = header.offsetHeight;
+    tabsWrap.style.top = h + 'px';
+    document.documentElement.style.setProperty('--header-h', h + 'px');
   }
 
   function onScroll() {
@@ -2827,9 +2849,12 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
     ticking = true;
     requestAnimationFrame(function() {
       var y = window.scrollY;
+      // Boven de fold of bij scroll omhoog → tonen. Pas vanaf 20px
+      // negeren we mini-scrolls (kerntoetsen-bounce) zodat de balk
+      // niet flikkert als je per ongeluk een paar pixels rolt.
       if (y > lastY && y > 20) {
         tabsWrap.classList.add('tabs-hidden');
-      } else if (y < lastY) {
+      } else if (y < lastY || y <= 4) {
         tabsWrap.classList.remove('tabs-hidden');
       }
       lastY = y;
