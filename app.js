@@ -2652,8 +2652,10 @@ function _wbItemRow(item, isChecklistRow) {
     info.className = "wb-item-info";
     const codeEl = document.createElement("div");
     codeEl.className = "wb-item-code";
-    codeEl.textContent = item.code || "(zonder code)";
-    info.appendChild(codeEl);
+    if (item.code) {
+      codeEl.textContent = item.code;
+      info.appendChild(codeEl);
+    }
     if (item.note) {
       const n = document.createElement("div");
       n.className = "wb-item-note";
@@ -2690,8 +2692,10 @@ function _wbItemRow(item, isChecklistRow) {
 
   const codeEl = document.createElement("div");
   codeEl.className = "code";
-  codeEl.textContent = item.code || "(zonder code)";
-  info.appendChild(codeEl);
+  if (item.code) {
+    codeEl.textContent = item.code;
+    info.appendChild(codeEl);
+  }
 
   const loc = document.createElement("div");
   loc.className = "loc";
@@ -2805,6 +2809,37 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
       }
     } catch (e) {}
   });
+})();
+
+// Tab balk: verbergen bij scroll omlaag, tonen bij scroll omhoog
+(function() {
+  var tabsWrap = document.querySelector('.tabs-pill-wrap');
+  var header = document.querySelector('header');
+  var lastY = 0;
+  var ticking = false;
+
+  function setTop() {
+    tabsWrap.style.top = header.offsetHeight + 'px';
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function() {
+      var y = window.scrollY;
+      if (y > lastY && y > 20) {
+        tabsWrap.classList.add('tabs-hidden');
+      } else if (y < lastY) {
+        tabsWrap.classList.remove('tabs-hidden');
+      }
+      lastY = y;
+      ticking = false;
+    });
+  }
+
+  setTop();
+  window.addEventListener('resize', setTop);
+  window.addEventListener('scroll', onScroll, { passive: true });
 })();
 
 // Service Worker registreren voor offline ondersteuning
