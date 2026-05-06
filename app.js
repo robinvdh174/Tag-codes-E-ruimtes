@@ -64,7 +64,10 @@ let activeRoom = "all";
 let holdTimers = {};
 const HOLD_MS = 2000;
 let syncTimer = null;
-let isSyncing = false;
+// Twee aparte vlaggen zodat een lopende lees-sync en een schrijfactie
+// elkaar niet blokkeren maar elk wél hun eigen herinschrijving voorkomen.
+let _isReading = false;
+let _isWriting = false;
 // IDs van records met een schrijfactie in de lucht. De auto-sync mag deze
 // records NIET overschrijven met (oudere) serverdata, anders flippen wijzigingen
 // kort terug op het scherm en gaan ze in races verloren.
@@ -232,7 +235,7 @@ function updatePendingBadge() {
   const badge = document.getElementById("syncBadge");
   const lbl = document.getElementById("syncLabel");
   if (!badge || !lbl) return;
-  if (n > 0 && !isSyncing) {
+  if (n > 0 && !_isReading && !_isWriting) {
     badge.className = "sync-badge offline";
     lbl.textContent = n + " wachtend";
   }
@@ -325,8 +328,8 @@ async function fetchWithTimeout(url, ms) {
 }
 
 async function syncFromSheets(silent) {
-  if (!SCRIPT_URL || isSyncing) return;
-  isSyncing = true;
+  if (!SCRIPT_URL || _isReading) return;
+  _isReading = true;
   if (!silent) setSyncStatus("syncing", "Laden...");
   let attempt = 0;
   while (attempt < 2) {
@@ -386,7 +389,7 @@ async function syncFromSheets(silent) {
       } else {
         setSyncStatus("offline", "Ongeldig antwoord");
       }
-      isSyncing = false;
+      _isReading = false;
       return;
     } catch(e) {
       if (attempt < 2 && (e.name === "AbortError" || e.message.indexOf("HTTP 5") !== -1 || e.name === "TypeError")) {
@@ -403,11 +406,11 @@ async function syncFromSheets(silent) {
         setSyncStatus("error", "Fout bij laden");
       }
       console.warn("syncFromSheets:", e);
-      isSyncing = false;
+      _isReading = false;
       return;
     }
   }
-  isSyncing = false;
+  _isReading = false;
 }
 
 function deduplicateById(arr) {
@@ -426,7 +429,7 @@ function deduplicateById(arr) {
 async function sheetAction(params) {
   if (!SCRIPT_URL) return false;
   // Blokkeer auto-sync terwijl we schrijven, anders overschrijft die onze nieuwe data
-  isSyncing = true;
+  _isWriting = true;
   try {
     const url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
@@ -437,7 +440,7 @@ async function sheetAction(params) {
     if (json.error) throw new Error(json.error);
     return json;
   } finally {
-    isSyncing = false;
+    _isWriting = false;
   }
 }
 
@@ -1604,8 +1607,16 @@ function resolveConflict(choice) {
   }
 }
 
-async function handleConflictResult(result, localItem) {
+async function handleConflictResult(result, localItem, _depth) {
   if (!result.conflict) return false;
+  if ((_depth || 0) >= 5) {
+    // Na 5 opeenvolgende conflicten opgeven en de server als basis nemen
+    // zodat we niet in een oneindige dialoogketting terechtkomen.
+    const idx = data.findIndex(function(d) { return d.id === localItem.id; });
+    if (idx !== -1) { data[idx] = result.serverItem; saveLocal(); refreshUI(); }
+    showToast("Conflict kon niet worden opgelost — server versie overgenomen.", true);
+    return true;
+  }
   const resolution = await showConflictDialog(localItem, result.serverItem);
   if (resolution.choice === "server") {
     const idx = data.findIndex(function(d) { return d.id === localItem.id; });
@@ -1622,7 +1633,7 @@ async function handleConflictResult(result, localItem) {
     if (retryResult && retryResult.conflict) {
       // Tijdens het oplossen heeft iemand anders opnieuw bewerkt — opnieuw
       // vragen om de conflictkeuze in plaats van stil te overschrijven.
-      await handleConflictResult(retryResult, localItem);
+      await handleConflictResult(retryResult, localItem, (_depth || 0) + 1);
       return true;
     }
     if (retryResult && retryResult.lastModified) {
@@ -2613,10 +2624,15 @@ async function werkbonFinalize() {
   const markedItems = items.filter(function(it) { return it.id in _werkbon.done; });
   if (markedItems.length === 0) { showToast("Markeer eerst minstens één kast", true); return; }
   _werkbonFinalizing = true;
+  const progressEl = document.getElementById("wbProgress");
+  const finalizeBtn = document.getElementById("wbFinalizeBtn");
+  if (finalizeBtn) finalizeBtn.disabled = true;
   try {
     for (let i = 0; i < markedItems.length; i++) {
+      if (progressEl) progressEl.textContent = (i + 1) + " / " + markedItems.length + " verwerkt…";
       await setStatus(markedItems[i].id, _werkbon.done[markedItems[i].id], naam, datum);
     }
+    if (progressEl) progressEl.textContent = "";
     // Alleen de daadwerkelijk verwerkte (gemarkeerde) kasten verwijderen.
     // Ongemarkeerde labels blijven in de stapel staan zodat de gebruiker
     // ze in een volgende sessie kan afwerken — voorheen verloor men ze.
@@ -2633,6 +2649,8 @@ async function werkbonFinalize() {
     if (remaining === 0) showToast(verwoord + " — stapel leeg");
     else showToast(verwoord + " — " + remaining + " ongemarkeerd in de stapel");
   } finally {
+    if (progressEl) progressEl.textContent = "";
+    if (finalizeBtn) finalizeBtn.disabled = false;
     setTimeout(function() { _werkbonFinalizing = false; }, 800);
   }
 }
