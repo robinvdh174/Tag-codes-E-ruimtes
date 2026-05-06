@@ -1,8 +1,10 @@
-const CACHE_NAME = "ekast-v27";
+importScripts("./version.js");
+const CACHE_NAME = "ekast-" + APP_VERSION;
 const ASSETS = [
   "./index.html",
   "./style.css",
   "./app.js",
+  "./version.js",
   "./manifest.json",
   "./ekast-icon.svg",
   "./apple-touch-icon.png",
@@ -56,6 +58,28 @@ self.addEventListener("fetch", function(e) {
   const path = url.pathname;
   const isAppFile = /\.(html|js|css|json)$/.test(path) || path === "/" || path.endsWith("/Tag-codes-E-ruimtes/");
   const fetchOpts = isAppFile ? { cache: "reload" } : {};
+
+  // Tesseract.js (~16 MB aan vendor-assets, versie-vast in /vendor/tesseract/).
+  // Cache-first: hit serveren we direct, miss vullen we de cache.
+  // Network-first zou bij elke scan een netwerk-roundtrip forceren en op
+  // trage verbindingen de OCR-start onnodig vertragen.
+  if (path.indexOf("/vendor/tesseract/") !== -1) {
+    e.respondWith(
+      caches.match(e.request).then(function(cached) {
+        if (cached) return cached;
+        return fetch(e.request).then(function(response) {
+          if (response && response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(function(cache) {
+              cache.put(e.request, clone);
+            });
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
 
   // Same-origin: network-first met cache-fallback.
   e.respondWith(
