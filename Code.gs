@@ -164,7 +164,8 @@ function handleDelete(id) {
 // ----------------------------------------------------------
 function handleLog(params) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheetName = decodeURIComponent(params.sheet || "Logboek");
+  // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
+  var sheetName = params.sheet || "Logboek";
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
@@ -180,10 +181,10 @@ function handleLog(params) {
   var timestamp = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
   sheet.appendRow([
     timestamp,
-    decodeURIComponent(params.logaction || ""),
-    decodeURIComponent(params.code      || ""),
-    decodeURIComponent(params.location  || ""),
-    decodeURIComponent(params.device    || "")
+    params.logaction || "",
+    params.code      || "",
+    params.location  || "",
+    params.device    || ""
   ]);
   Logger.log("LOG (" + sheetName + "): " + params.logaction + " - " + params.code);
   return { success: true };
@@ -195,8 +196,8 @@ function handleLog(params) {
 // ----------------------------------------------------------
 function handleAddRoom(name, desc) {
   if (!name) throw new Error("Geen naam opgegeven");
-  name = decodeURIComponent(name);
-  desc = decodeURIComponent(desc || "");
+  // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
+  desc = desc || "";
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName("Ruimtes");
   if (!sheet) {
