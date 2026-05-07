@@ -25,7 +25,7 @@ p.sub{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing
 .tab-pill{flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px 7px;color:#888888;position:relative;z-index:1;}
 .tab-pill .tab-icon{display:flex;align-items:center;justify-content:center;width:20px;height:20px;position:relative;}
 .tab-pill .tab-icon svg{width:16px;height:16px;display:block;}
-.tab-pill .tab-label{font-size:7.5px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;margin-top:3px;white-space:nowrap;}
+.tab-pill .tab-label{font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;margin-top:3px;white-space:nowrap;}
 .tab-pill.active{color:#f5a623;}
 .tab-pill.active-blue{color:#4a9eff;}
 .status-badge{position:absolute;top:-4px;right:-5px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;}
@@ -130,7 +130,6 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .scan-row-label{grid-column:1/-1;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.1em;margin-bottom:.2rem;}
 .scan-row-input{display:contents;}
 .scan-edit-input{width:100%;background:var(--bg);border:1.5px solid var(--accent);border-radius:8px;padding:.65rem 2rem .65rem .8rem;color:var(--accent);font-size:1rem;font-family:monospace;font-weight:700;outline:none;-webkit-appearance:none;}
-.scan-row-input{position:relative;}
 .scan-row-status{position:absolute;right:.6rem;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:900;line-height:1;pointer-events:none;}
 .scan-row-status.ok{background:var(--success);color:#000;}
 .scan-row-status.warn{background:#3a2a00;color:var(--accent);border:1.5px solid var(--accent);}

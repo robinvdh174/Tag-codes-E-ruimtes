@@ -615,7 +615,7 @@ function movePill(tabName) {
   if (!container || !pill || idx === -1) return;
   const padding = 4;
   const availWidth = container.offsetWidth - padding * 2;
-  const tabWidth = availWidth / 5;
+  const tabWidth = availWidth / tabOrder.length;
   pill.style.width = tabWidth + "px";
   pill.style.left = (padding + idx * tabWidth) + "px";
 }
@@ -748,9 +748,8 @@ function _doSearchNow(value) {
 }
 
 // "Bedoelde je..."-suggesties op basis van Levenshtein-afstand op
-// de genormaliseerde code. Alleen bij queries van 3+ tekens, max 1 typo
-// voor korte codes en 2 voor langere — voorkomt vals-positieven zoals
-// C404 ↔ C504 die echt verschillende kasten zijn.
+// de genormaliseerde code. Alleen bij queries van 3+ tekens; maxDist=1
+// voor codes korter dan 6 tekens, maxDist=2 voor langere codes.
 function _renderNoResults(container, raw, qNormCode) {
   const empty = document.createElement("div");
   empty.className = "empty";
@@ -1707,7 +1706,7 @@ function showPinSetup() {
     "<div class='form-group'><label>Naam van dit toestel</label>" +
     "<input type='text' id='setupDevice' placeholder='bv. GSM Dag' autocomplete='off'></div>" +
     "<div class='form-group'><label>PIN</label>" +
-    "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='8' inputmode='numeric' autocomplete='off'></div>" +
+    "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='off'></div>" +
     "<div class='pin-error' id='pinErr'></div>" +
     "<button class='btn-primary' onclick='savePin()'>Bevestigen</button>" +
     "</div>";
@@ -1737,7 +1736,7 @@ function showPinEnter() {
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
     "<div class='pin-sub'>" + esc(device) + "<br>Voer je PIN in.</div>" +
-    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='8' inputmode='numeric' autocomplete='new-password' oninput='verifyPin()'>" +
+    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='new-password' oninput='verifyPin()'>" +
     "<div class='pin-error' id='pinErr'></div>";
   ov.classList.add("open");
   // Als de pagina herladen is tijdens een lockout, toon direct de countdown
@@ -2860,15 +2859,11 @@ checkPin();
 // is doorgekomen op een telefoon.
 console.info("E-Kast Zoeker — versie " + APP_VERSION);
 
-// Tonen in de header zodat de gebruiker zonder console kan checken
-// welke versie actief is. We laten alleen het korte 'v23' nummer zien
-// zodat het op één regel naast 'Sappi' past — de volledige versie-tag
-// (incl. beschrijving) wordt naar het clipboard gekopieerd op tap.
+// Versienummer tonen in de header; kopieert naar clipboard bij tap.
 (function() {
   const el = document.getElementById("appVersionBadge");
   if (!el) return;
-  const short = APP_VERSION.split("-")[0]; // "v23" uit "v23-version-badge"
-  el.textContent = short;
+  el.textContent = APP_VERSION;
   el.title = "App-versie " + APP_VERSION + ". Tap om te kopiëren.";
   el.addEventListener("click", function() {
     try {
