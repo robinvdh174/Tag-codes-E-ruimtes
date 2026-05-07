@@ -145,13 +145,16 @@ function handleUpdate(dataParam) {
 function handleDelete(id) {
   if (!id) throw new Error("Geen id voor delete");
   var sheet = getOrCreateSheet();
-  var rows = sheet.getDataRange().getValues();
-  var headers = rows[0];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error("ID niet gevonden voor delete: " + id);
+  // Lees alleen de id-kolom (1 kolom) i.p.v. alle data — scheelt ~12× API-werk.
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var idCol = headers.indexOf("id");
-  for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][idCol]) === String(id)) {
-      sheet.deleteRow(i + 1);
-      Logger.log("DELETE: rij " + (i+1) + " verwijderd, id=" + id);
+  var idValues = sheet.getRange(2, idCol + 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < idValues.length; i++) {
+    if (String(idValues[i][0]) === String(id)) {
+      sheet.deleteRow(i + 2);
+      Logger.log("DELETE: rij " + (i+2) + " verwijderd, id=" + id);
       return { success: true, action: "delete", id: id };
     }
   }
