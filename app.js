@@ -1273,14 +1273,24 @@ async function addEntry() {
   const canonicalLoc = findRoom(loc);
   if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
   loc = canonicalLoc;
-  // Duplicaat in dezelfde ruimte blokkeren — verschillende ruimtes mogen
-  // wel dezelfde code hebben (komt voor bij gespiegelde installaties).
+  // Verschillende kasten mogen dezelfde code hebben (bv. gespiegelde
+  // installaties of identiek genoemde kasten in dezelfde ruimte). Bij een
+  // duplicaat vragen we om bevestiging zodat het niet per ongeluk gebeurt.
   const codeNorm = code.toLowerCase();
   const dup = data.find(function(d) {
     return d.location === loc && (d.code || "").trim().toLowerCase() === codeNorm;
   });
-  if (dup) { showToast("Code '" + code + "' bestaat al in " + loc, true); return; }
+  if (dup) {
+    showConfirm(
+      "Code '" + code + "' bestaat al in " + loc + ". Toch opslaan?",
+      function() { _saveNewEntry(code, loc, position, note); }
+    );
+    return;
+  }
+  _saveNewEntry(code, loc, position, note);
+}
 
+async function _saveNewEntry(code, loc, position, note) {
   const newItem = {
     id: newId(),
     code: code,
