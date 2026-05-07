@@ -16,11 +16,15 @@ const DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 const SYNC_INTERVAL_MS = 30000;
 
-// App-versie wordt getoond in foutmeldingen en in de console bij start.
-// Bump dit bij elke release zodat we via screenshots kunnen verifiëren
-// of een gebruiker echt op de nieuwste versie zit (i.p.v. een
-// gecachete oude SW-versie).
-const APP_VERSION = "v27";
+// APP_VERSION komt uit version.js — gedeeld met sw.js zodat CACHE_NAME
+// automatisch meebumpt. Wordt getoond in foutmeldingen en in de console
+// bij start zodat we via screenshots kunnen verifiëren of een gebruiker
+// echt op de nieuwste versie zit (i.p.v. een gecachete oude SW-versie).
+// Als version.js niet geladen is breken latere referenties — laat
+// dat hier hard zien zodat het probleem snel opvalt.
+if (typeof APP_VERSION === "undefined") {
+  console.error("version.js ontbreekt — laad-volgorde in index.html controleren");
+}
 
 // ℹ️ Beschrijving per e-ruimte (optioneel)
 // Voeg hier een omschrijving toe zodat collega's weten waar de ruimte zich bevindt.
@@ -503,11 +507,20 @@ async function init() {
     });
     document.addEventListener("keydown", function(e) {
       if (e.key === "Escape") {
+        // Volgorde van bovenste-eerst: het meest recent geopende modal sluit
+        // het eerst. confirmOverlay/statusNaamOverlay/statusPopup zijn altijd
+        // bovenop andere modals te openen, dus die eerst.
         if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
-        else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
+        // Conflict-dialoog forceert een keuze; Escape = "mijn versie bewaren"
+        // (veiligste default, dialoog komt bij de volgende sync vanzelf terug).
+        else if (document.getElementById("conflictOverlay").classList.contains("open")) { resolveConflict("mine"); }
+        else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
+        else if (document.getElementById("addRoomModal").classList.contains("open")) { closeAddRoomModal(); }
+        else if (document.getElementById("scanModal").classList.contains("open")) { closeScan(); }
+        else if (document.getElementById("werkbonModal").classList.contains("open")) { closeAfwerkenModal(); }
       }
     });
     // Sync zodra de tab weer zichtbaar wordt (bv. terug uit achtergrond op
@@ -849,10 +862,12 @@ function makeCard(item) {
   const info = document.createElement("div");
   info.className = "card-info";
 
-  const codeEl = document.createElement("div");
-  codeEl.className = "code";
-  appendHighlighted(codeEl, item.code, term);
-  info.appendChild(codeEl);
+  if (item.code) {
+    const codeEl = document.createElement("div");
+    codeEl.className = "code";
+    appendHighlighted(codeEl, item.code, term);
+    info.appendChild(codeEl);
+  }
 
   const loc = document.createElement("div");
   loc.className = "loc";
@@ -1254,10 +1269,18 @@ async function addEntry() {
   let loc = document.getElementById("newLocation").value.trim();
   const note = document.getElementById("newNote").value.trim();
   const position = document.getElementById("newPosition").value.trim();
+  if (!code) { showToast("Vul een code in!", true); return; }
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
   const canonicalLoc = findRoom(loc);
   if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
   loc = canonicalLoc;
+  // Duplicaat in dezelfde ruimte blokkeren — verschillende ruimtes mogen
+  // wel dezelfde code hebben (komt voor bij gespiegelde installaties).
+  const codeNorm = code.toLowerCase();
+  const dup = data.find(function(d) {
+    return d.location === loc && (d.code || "").trim().toLowerCase() === codeNorm;
+  });
+  if (dup) { showToast("Code '" + code + "' bestaat al in " + loc, true); return; }
 
   const newItem = {
     id: newId(),
@@ -1429,15 +1452,20 @@ async function deleteEntry(id) {
 // ============================================================
 function attachHoldListeners(btn, id) {
   const bar = btn.querySelector(".hold-bar");
+  // Respecteer prefers-reduced-motion: in die modus negeren we de inline
+  // transition-shorthand (animeert toch niet door !important in CSS) en
+  // tonen alleen de .holding-class — geen suggestie van vooruitgang waar
+  // er geen is. Hold-duur blijft gelijk om accidentele deletes te vermijden.
+  const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   function start(e) {
     e.preventDefault();
     btn.classList.add("holding");
-    if (bar) { bar.style.transition = "width " + HOLD_MS + "ms linear"; bar.style.width = "100%"; }
+    if (bar && !reduceMotion) { bar.style.transition = "width " + HOLD_MS + "ms linear"; bar.style.width = "100%"; }
     holdTimers[id] = setTimeout(function() { deleteEntry(id); }, HOLD_MS);
   }
   function stop() {
     btn.classList.remove("holding");
-    if (bar) { bar.style.transition = "none"; bar.style.width = "0%"; }
+    if (bar && !reduceMotion) { bar.style.transition = "none"; bar.style.width = "0%"; }
     if (holdTimers[id]) { clearTimeout(holdTimers[id]); delete holdTimers[id]; }
   }
   btn.addEventListener("mousedown", start);
@@ -1801,9 +1829,17 @@ function unlockApp() {
   // listeners bij elke unlock (memory leak + verspilde calls per click).
   if (unlockApp._activityBound) return;
   unlockApp._activityBound = true;
+  // Throttle: één localStorage-write per 30s. Zonder throttle werd elke
+  // click/touch/keydown weggeschreven (~tientallen writes per seconde
+  // bij intensieve scroll-/typsessies).
+  const ACTIVITY_THROTTLE_MS = 30000;
+  let _lastActivityWrite = Date.now();
   ["click", "touchstart", "keydown"].forEach(function(evt) {
     document.addEventListener(evt, function() {
-      safeSet("ekast-unlock", Date.now().toString());
+      const now = Date.now();
+      if (now - _lastActivityWrite < ACTIVITY_THROTTLE_MS) return;
+      _lastActivityWrite = now;
+      safeSet("ekast-unlock", now.toString());
     }, {passive: true});
   });
 }
