@@ -697,6 +697,13 @@ function _scoreItem(d, qNormCode, qNormText) {
     if (codeNorm.indexOf(qNormCode) === 0) return 900 - qNormCode.length; // prefix
     const idx = codeNorm.indexOf(qNormCode);
     if (idx !== -1) return 800 - idx;
+    // Reverse-substring: query bevat de code. Dekt twee gevallen:
+    // (1) label heeft méér info dan DB (bv. label "106.2/K822", DB "K822");
+    // (2) OCR-ruis aan het eind (bv. "K822i" terwijl het label "K822" toont).
+    // Minimale code-lengte 3 om triviale matches als "K1" te vermijden.
+    if (codeNorm.length >= 3 && qNormCode.indexOf(codeNorm) !== -1) {
+      return 700 - (qNormCode.length - codeNorm.length);
+    }
   }
   const loc = _normText(d.location);
   if (qNormText && loc) {
@@ -2415,7 +2422,15 @@ function _codeExistsInData(code) {
   const n = _normCode(code);
   if (!n) return false;
   for (let i = 0; i < data.length; i++) {
-    if (_normCode(data[i].code) === n) return true;
+    const dn = _normCode(data[i].code);
+    if (!dn) continue;
+    if (dn === n) return true;
+    // Spiegel de zoek-logica: ook partial matches tellen als "bestaat",
+    // anders zien gebruikers een misleidende waarschuwing terwijl de
+    // zoekfunctie het label wél kan vinden (label met meer/minder info,
+    // of OCR-ruis aan het eind).
+    if (n.length >= 3 && dn.indexOf(n) !== -1) return true;
+    if (dn.length >= 3 && n.indexOf(dn) !== -1) return true;
   }
   return false;
 }
