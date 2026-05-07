@@ -608,16 +608,17 @@ function switchTab(name) {
 }
 
 function movePill(tabName) {
-  const tabOrder = ["search","list","status","bonnen","add"];
-  let idx = tabOrder.indexOf(tabName);
   const container = document.getElementById("tabsContainer");
-  let pill = document.getElementById("tabsPill");
-  if (!container || !pill || idx === -1) return;
-  const padding = 4;
-  const availWidth = container.offsetWidth - padding * 2;
-  const tabWidth = availWidth / tabOrder.length;
-  pill.style.width = tabWidth + "px";
-  pill.style.left = (padding + idx * tabWidth) + "px";
+  const pill = document.getElementById("tabsPill");
+  const btn = document.getElementById("tbtn-" + tabName);
+  if (!container || !pill || !btn) return;
+  // Lees de werkelijke positie van de actieve knop af i.p.v. de breedte
+  // gelijk te verdelen — flexbox kan door subpixel-afronding net iets
+  // anders uitkomen, waardoor de omkadering scheef onder de tab valt.
+  const cRect = container.getBoundingClientRect();
+  const bRect = btn.getBoundingClientRect();
+  pill.style.width = bRect.width + "px";
+  pill.style.left = (bRect.left - cRect.left) + "px";
 }
 
 function renderStatus() {
