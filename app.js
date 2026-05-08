@@ -2123,7 +2123,7 @@ async function onScanFileChosen(ev) {
 // "Tag-code E", "Tag-code M", "machine" en "omschrijving" en pakken
 // de tekst er vlak achter (of op de volgende regel als de waarde in
 // een tabelcel staat — mits die volgende regel zelf geen label is).
-const _BON_LABEL_RE = /^(tag.?code|machine|stopnr|volgnummer|soort|opdrachtgever|omschrijving|schakel|vergunning|onderdeel|geplande|uitvoerder|firma|slotnummer|naam|tel|datum|veiliggesteld|inbedrijf)/i;
+const _BON_LABEL_RE = /^(tag.{0,3}code|machine|stopnr|volgnummer|soort|opdrachtgever|omschrijving|schakel|vergunning|onderdeel|geplande|uitvoerder|firma|slotnummer|naam|tel|datum|veiliggesteld|inbedrijf)/i;
 
 function _parseBonText(text) {
   // Vindt eerste "code-achtige" token. Tolereert OCR-spaties tussen
@@ -2161,6 +2161,10 @@ function _parseBonText(text) {
     if (tagMatch) {
       const which = tagMatch[1].toUpperCase();
       let val = (tagMatch[2] || "").trim();
+      // Strip OCR-ruis van de rechterkolom: label-woorden die direct aan de
+      // waarde worden geplakt (bijv. "106.1/K604Tag-code" → "106.1/K604",
+      // of "Tag-code" als volledige waarde → "").
+      val = val.replace(/\s*(?:tag.{0,3}code|machine|stopnr|volgnummer|soort|opdrachtgever|omschrijving|schakel|vergunning|onderdeel|geplande|uitvoerder|firma|slotnummer|naam|tel)\b.*$/i, "").trim();
       if (!val) val = nextLineValue(lines, i);
       const code = firstCodeToken(val);
       if (code) {

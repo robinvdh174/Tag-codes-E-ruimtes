@@ -201,6 +201,25 @@ Zeef/perspartij`;
   eq(r.tagE, "106.1/K604", "Fallback NNN.N/CODE: code gevonden zonder label");
 }
 
+// ---------- 20. OCR-artefact rechterkolom: label direct aan waarde geplakt ----------
+{
+  // OCR leest twee kolommen samen: "106.1/K604" gevolgd door "Tag-code"
+  // van de rechterkolom (zonder spatie, of met spatie die wordt samengevoegd).
+  const r1 = _parseBonText("Tag-code E: 106.1/K604Tag-code\nTag-code M: Tag-code");
+  eq(r1.tagE, "106.1/K604", "Rechterkolom-artifact zonder spatie: tagE correct afgekapt");
+  eq(r1.tagM, "", "Rechterkolom-artifact: tagM 'Tag-code' wordt leeg");
+
+  const r2 = _parseBonText("Tag-code E: 106.1/K604 Tag-code\nTag-code M: Tag-code");
+  eq(r2.tagE, "106.1/K604", "Rechterkolom-artifact met spatie: tagE correct afgekapt");
+  eq(r2.tagM, "", "Rechterkolom-artifact met spatie: tagM leeg");
+}
+
+// ---------- 21. OCR-artefact: andere label-woorden geplakt aan waarde ----------
+{
+  const r = _parseBonText("Tag-code E: K604 Onderdeel: iets");
+  eq(r.tagE, "K604", "Onderdeel-label als trailing garbage wordt afgeknipt");
+}
+
 // ---------- 19. Fallback: geen valse match op "ZEEF/PERS" of "Zeef/perspartij" ----------
 {
   const text = `ENTRY-ZEEF/PERS partij
