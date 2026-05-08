@@ -173,5 +173,42 @@ Tag-code M:    M001
   eq(r.tagM, "", "'Postcode' niet als tag-code gepakt");
 }
 
+// ---------- 16. Realistische bon: "Tag-code E: 106.1/K604" ----------
+{
+  const text = `Tag-code M:
+Tag-code E:                          106.1/K604
+Onderdeel:                           Zeef/perspartij`;
+  const r = _parseBonText(text);
+  eq(r.tagE, "106.1/K604", "Bon met locatie-prefix: tagE pakt '106.1/K604'");
+  eq(r.tagM, "", "tagM blijft leeg");
+}
+
+// ---------- 17. OCR-variant: spaties rondom koppelteken ("Tag - code E:") ----------
+{
+  const r = _parseBonText("Tag - code E: K604");
+  eq(r.tagE, "K604", "OCR-variant 'Tag - code E:' (spaties om koppelteken)");
+}
+
+// ---------- 18. Fallback: NNN.N/CODE-patroon als label ontbreekt ----------
+{
+  // Simuleert een bon waarbij OCR het "Tag-code E:"-label niet herkent
+  // maar de waarde "106.1/K604" wél in de tekst staat.
+  const text = `NIET INSCHAKELEN
+Aandrijving zuigwals
+106.1/K604
+Zeef/perspartij`;
+  const r = _parseBonText(text);
+  eq(r.tagE, "106.1/K604", "Fallback NNN.N/CODE: code gevonden zonder label");
+}
+
+// ---------- 19. Fallback: geen valse match op "ZEEF/PERS" of "Zeef/perspartij" ----------
+{
+  const text = `ENTRY-ZEEF/PERS partij
+Vergunning ENTRY ZEEF/PERS
+Zeef/perspartij`;
+  const r = _parseBonText(text);
+  eq(r.tagE, "", "Fallback: 'ZEEF/PERS' en 'Zeef/perspartij' niet als tag-code");
+}
+
 console.log("Parser-tests voltooid.");
 summary();

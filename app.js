@@ -2157,7 +2157,7 @@ function _parseBonText(text) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const tagMatch = trimmed.match(/tag.?code\s*([EMem])\b\s*[:\-]?\s*(.*)$/i);
+    const tagMatch = trimmed.match(/tag.{0,3}code\s*([EMem])\b\s*[:\-]?\s*(.*)$/i);
     if (tagMatch) {
       const which = tagMatch[1].toUpperCase();
       let val = (tagMatch[2] || "").trim();
@@ -2193,6 +2193,16 @@ function _parseBonText(text) {
       if (val) result.omschrijving = val.replace(/\s+/g, " ").slice(0, 80);
     }
   }
+
+  // Fallback: als OCR het "Tag-code E:"-label mist maar wél de code-waarde
+  // in het formaat "NNN.N/CODE" kan lezen (zoals "106.1/K604"), extraheer
+  // die dan direct. Het patroon vereist cijfers vóór de slash zodat velden
+  // als "ZEEF/PERS" of "Zeef/perspartij" niet matchen.
+  if (!result.tagE && !result.tagM) {
+    const m = String(text).match(/\b(\d+(?:\.\d+)?\/[A-Za-z][A-Za-z0-9]{2,})\b/);
+    if (m) result.tagE = m[1];
+  }
+
   return result;
 }
 
