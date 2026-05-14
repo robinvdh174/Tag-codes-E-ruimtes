@@ -39,8 +39,12 @@ function doGet(e) {
     if (action === "update")   return makeResponse(handleUpdate(e.parameter.data));
     if (action === "delete")   return makeResponse(handleDelete(e.parameter.id));
     if (action === "log")      return makeResponse(handleLog(e.parameter));
-    if (action === "addRoom")  return makeResponse(handleAddRoom(e.parameter.name, e.parameter.desc));
-    if (action === "getRooms") return makeResponse(handleGetRooms());
+    if (action === "addRoom")      return makeResponse(handleAddRoom(e.parameter.name, e.parameter.desc));
+    if (action === "getRooms")     return makeResponse(handleGetRooms());
+    if (action === "getBlocklist") return makeResponse(handleGetBlocklist());
+    if (action === "blockDevice")  return makeResponse(handleBlockDevice(e.parameter.deviceId, e.parameter.deviceName, e.parameter.blockedBy));
+    if (action === "unblockDevice")return makeResponse(handleUnblockDevice(e.parameter.deviceId));
+    if (action === "getDevices")   return makeResponse(handleGetDevices());
     return makeResponse({ error: "Onbekende actie: " + action });
   } catch (err) {
     Logger.log("doGet fout: " + err.message);
@@ -277,6 +281,92 @@ function getOrCreateSheet() {
     if (updated) Logger.log("Header-rij bijgewerkt met nieuwe kolommen");
   }
   return sheet;
+}
+
+// ----------------------------------------------------------
+// GETBLOCKLIST: geblokkeerde toestel-ID's ophalen
+// ----------------------------------------------------------
+function handleGetBlocklist() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Geblokkeerd");
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  var idValues = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  var result = [];
+  for (var i = 0; i < idValues.length; i++) {
+    if (idValues[i][0]) result.push(String(idValues[i][0]));
+  }
+  return result;
+}
+
+// ----------------------------------------------------------
+// BLOCKDEVICE: toestel toevoegen aan de blocklist
+// ----------------------------------------------------------
+function handleBlockDevice(deviceId, deviceName, blockedBy) {
+  if (!deviceId) throw new Error("Geen deviceId opgegeven");
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Geblokkeerd");
+  if (!sheet) {
+    sheet = ss.insertSheet("Geblokkeerd");
+    sheet.appendRow(["deviceId", "deviceName", "blockedBy", "date"]);
+    sheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#d32f2f").setFontColor("#ffffff");
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 120);
+    sheet.setColumnWidth(2, 180);
+    sheet.setColumnWidth(3, 160);
+    sheet.setColumnWidth(4, 160);
+  }
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(deviceId)) return { ok: true, existing: true };
+  }
+  var date = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
+  sheet.appendRow([deviceId, deviceName || "", blockedBy || "", date]);
+  Logger.log("GEBLOKKEERD: " + deviceId + " (" + deviceName + ") door " + blockedBy);
+  return { ok: true };
+}
+
+// ----------------------------------------------------------
+// UNBLOCKDEVICE: toestel verwijderen uit de blocklist
+// ----------------------------------------------------------
+function handleUnblockDevice(deviceId) {
+  if (!deviceId) throw new Error("Geen deviceId opgegeven");
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Geblokkeerd");
+  if (!sheet || sheet.getLastRow() <= 1) return { ok: true };
+  var idValues = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < idValues.length; i++) {
+    if (String(idValues[i][0]) === String(deviceId)) {
+      sheet.deleteRow(i + 2);
+      Logger.log("GEDEBLOKKEERD: " + deviceId);
+      return { ok: true };
+    }
+  }
+  return { ok: true };
+}
+
+// ----------------------------------------------------------
+// GETDEVICES: unieke toestellen ophalen uit aanmeldingslogboek
+// ----------------------------------------------------------
+function handleGetDevices() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Logboek Aanmeldingen");
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  var rows = sheet.getDataRange().getValues();
+  var seen = {};
+  var result = [];
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var deviceStr = String(rows[i][4] || "");
+    if (!deviceStr) continue;
+    var match = deviceStr.match(/^(.+)\s+\(([A-F0-9]{8})\)$/i);
+    if (!match) continue;
+    var name = match[1].trim();
+    var id = match[2].toUpperCase();
+    if (!seen[id]) {
+      seen[id] = true;
+      result.push({ deviceId: id, deviceName: name, lastSeen: String(rows[i][0] || "") });
+    }
+  }
+  return result;
 }
 
 function makeResponse(data) {

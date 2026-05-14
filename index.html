@@ -25,7 +25,7 @@
 <header>
   <div class="header-row">
     <div>
-      <h1>E-KAST ZOEKER</h1>
+      <h1 id="appTitle" style="cursor:default;user-select:none;">E-KAST ZOEKER</h1>
       <p class="sub">Verdelers &bull; Sappi <span class="app-version-badge" id="appVersionBadge"></span></p>
     </div>
     <button class="sync-badge idle" id="syncBadge" type="button" onclick="manualSync()" title="Klik om te synchroniseren" aria-label="Synchronisatiestatus — klik om te synchroniseren">
@@ -195,6 +195,29 @@
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Beheerderstoegang (verborgen) -->
+<div class="pin-overlay" id="adminCodeOverlay" style="z-index:510;">
+  <div class="pin-title">Beheer</div>
+  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" oninput="" style="letter-spacing:.2em;width:200px;" maxlength="20">
+  <div class="pin-error" id="adminCodeErr"></div>
+  <div style="display:flex;gap:.8rem;margin-top:1.2rem;">
+    <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" onclick="closeAdminCodePrompt()">Annuleren</button>
+    <button class="btn-primary" style="flex:1;margin-top:0;" type="button" onclick="verifyAdminCode()">OK</button>
+  </div>
+</div>
+
+<!-- Toestellen beheer modal -->
+<div class="modal-overlay" id="devicesModal" onclick="if(event.target===this)closeDevicesModal()" role="dialog" aria-modal="true" aria-labelledby="devicesModalTitle">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title" id="devicesModalTitle">Toestellen beheren</div>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Beheer welke toestellen toegang hebben tot de app. Geblokkeerde toestellen krijgen bij de volgende aanmelding een foutmelding te zien.</p>
+    <div id="devicesList"></div>
+    <div class="modal-btns" style="margin-top:1.2rem;">
+      <button class="btn-cancel" type="button" onclick="closeDevicesModal()">&larr; Sluiten</button>
     </div>
   </div>
 </div>
