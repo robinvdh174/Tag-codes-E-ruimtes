@@ -13,6 +13,9 @@ const API_TOKEN = "ekast-2025";
 const DEVICE_PIN_HASH = "1299c06d517825c0529d69fe9f8bbf7b308b9db68289db3c9f844570deb1d621";
 const DEVICE_PIN_LENGTH = 4; // Aantal cijfers van de PIN
 
+// Beheerderspas (SHA-256 — niet de klare tekst opslaan)
+const ADMIN_CODE_HASH = "1bc3201a9f24a2fe48f634f90d406aaf6cbf5e36e292870ecba98d74b065ee1b";
+
 // Auto-sync interval in milliseconden (standaard: 30 seconden)
 const SYNC_INTERVAL_MS = 30000;
 
@@ -562,6 +565,7 @@ async function init() {
   syncTimer = setInterval(function() {
     if (document.visibilityState === "visible") syncFromSheets(true);
   }, SYNC_INTERVAL_MS);
+  _initAdminTrigger();
 }
 
 function updateTotalCount() {
@@ -2034,6 +2038,58 @@ function unblockDeviceAction(deviceId, deviceName) {
 function closeDevicesModal() {
   const modal = document.getElementById("devicesModal");
   if (modal) modal.classList.remove("open");
+}
+
+// ============================================================
+// GEHEIM BEHEERDERSTOEGANG — 5× tikken op de app-titel
+// ============================================================
+function _initAdminTrigger() {
+  const title = document.getElementById("appTitle");
+  if (!title || title._adminBound) return;
+  title._adminBound = true;
+  let _tapCount = 0;
+  let _tapTimer = null;
+  title.addEventListener("click", function() {
+    _tapCount++;
+    if (_tapTimer) clearTimeout(_tapTimer);
+    _tapTimer = setTimeout(function() { _tapCount = 0; }, 2000);
+    if (_tapCount >= 5) {
+      _tapCount = 0;
+      clearTimeout(_tapTimer);
+      showAdminCodePrompt();
+    }
+  });
+}
+
+function showAdminCodePrompt() {
+  const ov = document.getElementById("adminCodeOverlay");
+  if (!ov) return;
+  const inp = document.getElementById("adminCodeInput");
+  const err = document.getElementById("adminCodeErr");
+  if (inp) { inp.value = ""; inp.disabled = false; }
+  if (err) err.textContent = "";
+  ov.classList.add("open");
+  setTimeout(function() { if (inp) inp.focus(); }, 150);
+}
+
+function closeAdminCodePrompt() {
+  const ov = document.getElementById("adminCodeOverlay");
+  if (ov) ov.classList.remove("open");
+}
+
+async function verifyAdminCode() {
+  const inp = document.getElementById("adminCodeInput");
+  const err = document.getElementById("adminCodeErr");
+  if (!inp || !err) return;
+  const h = await hashPin(inp.value.trim());
+  if (h === ADMIN_CODE_HASH) {
+    closeAdminCodePrompt();
+    openDevicesModal();
+  } else {
+    err.textContent = "Onjuiste code.";
+    inp.value = "";
+    inp.focus();
+  }
 }
 
 // ============================================================

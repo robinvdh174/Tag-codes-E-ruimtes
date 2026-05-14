@@ -25,7 +25,7 @@
 <header>
   <div class="header-row">
     <div>
-      <h1>E-KAST ZOEKER</h1>
+      <h1 id="appTitle" style="cursor:default;user-select:none;">E-KAST ZOEKER</h1>
       <p class="sub">Verdelers &bull; Sappi <span class="app-version-badge" id="appVersionBadge"></span></p>
     </div>
     <button class="sync-badge idle" id="syncBadge" type="button" onclick="manualSync()" title="Klik om te synchroniseren" aria-label="Synchronisatiestatus — klik om te synchroniseren">
@@ -111,10 +111,7 @@
   <div id="tab-add" class="panel" role="tabpanel" aria-labelledby="tbtn-add">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;">
       <div class="section-title" style="margin-bottom:0">Nieuwe kast toevoegen</div>
-      <div style="display:flex;gap:.5rem;">
-        <button class="btn-room-add" onclick="openDevicesModal()" type="button" title="Toestellen beheren">Toestellen</button>
-        <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
-      </div>
+      <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
     </div>
 
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
@@ -199,6 +196,17 @@
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
     </div>
+  </div>
+</div>
+
+<!-- Beheerderstoegang (verborgen) -->
+<div class="pin-overlay" id="adminCodeOverlay" style="z-index:510;">
+  <div class="pin-title">Beheer</div>
+  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" oninput="" style="letter-spacing:.2em;width:200px;" maxlength="20">
+  <div class="pin-error" id="adminCodeErr"></div>
+  <div style="display:flex;gap:.8rem;margin-top:1.2rem;">
+    <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" onclick="closeAdminCodePrompt()">Annuleren</button>
+    <button class="btn-primary" style="flex:1;margin-top:0;" type="button" onclick="verifyAdminCode()">OK</button>
   </div>
 </div>
 
