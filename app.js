@@ -1899,7 +1899,7 @@ function showAccessDenied() {
     "Dit toestel heeft geen toegang meer.<br>" +
     "<span style='color:var(--text);font-weight:700;'>" + esc(deviceName) + "</span>" +
     (deviceId ? "<br><code style='font-size:.75rem;'>" + esc(deviceId) + "</code>" : "") +
-    "<br><br>Neem contact op met de beheerder." +
+    "<br><br>Neem contact op met de<br><strong style='color:var(--text);'>Technische Dienst Sappi</strong>." +
     "</div>";
   ov.classList.add("open");
 }
