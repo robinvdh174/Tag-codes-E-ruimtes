@@ -201,6 +201,18 @@ input[type=date]:focus{border-color:var(--accent);}
 .tab-pill:focus-visible{outline-offset:-3px;border-radius:9px;}
 /* Touch-targets minimaal 32x32 (WCAG 2.5.5 / Apple HIG). */
 .btn-info-loc{min-width:28px;min-height:28px;display:inline-flex;align-items:center;justify-content:center;}
+/* ===== TOESTELLEN BEHEER ===== */
+.device-item{display:flex;align-items:center;justify-content:space-between;padding:.7rem .3rem;border-bottom:1px solid var(--border);gap:.8rem;}
+.device-item:last-child{border-bottom:none;}
+.device-item.device-blocked .device-name{color:var(--danger);}
+.device-item.device-me .device-name{color:var(--accent);}
+.device-info{flex:1;min-width:0;}
+.device-name{font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.device-id{font-size:.72rem;color:var(--muted);margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.device-btn{padding:.32rem .65rem;border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer;border:1.5px solid;white-space:nowrap;background:transparent;}
+.device-btn-block{color:var(--danger);border-color:var(--danger);}
+.device-btn-unblock{color:var(--success);border-color:var(--success);}
+.device-btn:disabled{opacity:.4;cursor:not-allowed;color:var(--muted);border-color:var(--muted);}
 /* ===== REDUCED MOTION ===== */
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}

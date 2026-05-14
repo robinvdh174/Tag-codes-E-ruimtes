@@ -111,7 +111,10 @@
   <div id="tab-add" class="panel" role="tabpanel" aria-labelledby="tbtn-add">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;">
       <div class="section-title" style="margin-bottom:0">Nieuwe kast toevoegen</div>
-      <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
+      <div style="display:flex;gap:.5rem;">
+        <button class="btn-room-add" onclick="openDevicesModal()" type="button" title="Toestellen beheren">Toestellen</button>
+        <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
+      </div>
     </div>
 
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
@@ -195,6 +198,18 @@
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toestellen beheer modal -->
+<div class="modal-overlay" id="devicesModal" onclick="if(event.target===this)closeDevicesModal()" role="dialog" aria-modal="true" aria-labelledby="devicesModalTitle">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title" id="devicesModalTitle">Toestellen beheren</div>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Beheer welke toestellen toegang hebben tot de app. Geblokkeerde toestellen krijgen bij de volgende aanmelding een foutmelding te zien.</p>
+    <div id="devicesList"></div>
+    <div class="modal-btns" style="margin-top:1.2rem;">
+      <button class="btn-cancel" type="button" onclick="closeDevicesModal()">&larr; Sluiten</button>
     </div>
   </div>
 </div>

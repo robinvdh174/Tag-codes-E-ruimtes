@@ -77,6 +77,9 @@ let _isWriting = false;
 // kort terug op het scherm en gaan ze in races verloren.
 const _pendingIds = new Set();
 
+// Geblokkeerde toestel-IDs, opgehaald van de server bij elke aanmelding.
+let _blocklist = [];
+
 // Cryptografisch-veilige unieke ID. Math.random() heeft op druk gebruik
 // (meerdere devices binnen dezelfde ms) een reële collision-kans.
 function newId() {
@@ -1701,7 +1704,7 @@ async function hashPin(pin) {
   return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, "0"); }).join("");
 }
 
-function checkPin() {
+async function checkPin() {
   const device = safeGet("ekast-device", null);
   if (!device) {
     showPinSetup();
@@ -1709,6 +1712,8 @@ function checkPin() {
   }
   const lastUnlock = parseInt(safeGet("ekast-unlock", "0"), 10);
   if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) {
+    const allowed = await fetchAndCheckBlocklist();
+    if (!allowed) { showAccessDenied(); return; }
     init();
   } else {
     showPinEnter();
@@ -1837,28 +1842,203 @@ async function verifyPin() {
   }
 }
 
-function unlockApp() {
+async function unlockApp() {
   safeSet("ekast-unlock", Date.now().toString());
   if (document.activeElement) document.activeElement.blur();
+  // Activiteitslistener slechts één keer hechten
+  if (!unlockApp._activityBound) {
+    unlockApp._activityBound = true;
+    const ACTIVITY_THROTTLE_MS = 30000;
+    let _lastActivityWrite = Date.now();
+    ["click", "touchstart", "keydown"].forEach(function(evt) {
+      document.addEventListener(evt, function() {
+        const now = Date.now();
+        if (now - _lastActivityWrite < ACTIVITY_THROTTLE_MS) return;
+        _lastActivityWrite = now;
+        safeSet("ekast-unlock", now.toString());
+      }, {passive: true});
+    });
+  }
+  const allowed = await fetchAndCheckBlocklist();
+  if (!allowed) { showAccessDenied(); return; }
   document.getElementById("pinOverlay").classList.remove("open");
   init();
-  // Verleng sessie bij activiteit — slechts één keer hechten, anders accumuleren
-  // listeners bij elke unlock (memory leak + verspilde calls per click).
-  if (unlockApp._activityBound) return;
-  unlockApp._activityBound = true;
-  // Throttle: één localStorage-write per 30s. Zonder throttle werd elke
-  // click/touch/keydown weggeschreven (~tientallen writes per seconde
-  // bij intensieve scroll-/typsessies).
-  const ACTIVITY_THROTTLE_MS = 30000;
-  let _lastActivityWrite = Date.now();
-  ["click", "touchstart", "keydown"].forEach(function(evt) {
-    document.addEventListener(evt, function() {
-      const now = Date.now();
-      if (now - _lastActivityWrite < ACTIVITY_THROTTLE_MS) return;
-      _lastActivityWrite = now;
-      safeSet("ekast-unlock", now.toString());
-    }, {passive: true});
+}
+
+// ============================================================
+// TOEGANGSBEHEER — GEBLOKKEERDE TOESTELLEN
+// ============================================================
+
+async function fetchAndCheckBlocklist() {
+  if (!SCRIPT_URL) return true;
+  try {
+    const resp = await fetchWithTimeout(
+      SCRIPT_URL + "?action=getBlocklist&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
+      12000
+    );
+    if (resp.ok) {
+      const json = await resp.json();
+      if (Array.isArray(json)) _blocklist = json;
+    }
+  } catch(e) {
+    console.warn("Blocklist ophalen mislukt:", e);
+  }
+  const uid = safeGet("ekast-device-id", null);
+  if (!uid) return true;
+  return !_blocklist.some(function(id) { return id.toUpperCase() === uid.toUpperCase(); });
+}
+
+function showAccessDenied() {
+  const deviceName = safeGet("ekast-device", "dit toestel");
+  const deviceId = safeGet("ekast-device-id", "");
+  const ov = document.getElementById("pinOverlay");
+  ov.innerHTML =
+    "<div class='pin-title'>E-KAST ZOEKER</div>" +
+    "<div style='font-size:1rem;font-weight:700;color:var(--danger);margin-bottom:1rem;text-align:center;'>Toegang geweigerd</div>" +
+    "<div style='max-width:300px;text-align:center;color:var(--muted);font-size:.85rem;line-height:1.8;'>" +
+    "Dit toestel heeft geen toegang meer.<br>" +
+    "<span style='color:var(--text);font-weight:700;'>" + esc(deviceName) + "</span>" +
+    (deviceId ? "<br><code style='font-size:.75rem;'>" + esc(deviceId) + "</code>" : "") +
+    "<br><br>Neem contact op met de beheerder." +
+    "</div>";
+  ov.classList.add("open");
+}
+
+// ============================================================
+// TOESTELLEN BEHEER — modal
+// ============================================================
+
+async function openDevicesModal() {
+  const modal = document.getElementById("devicesModal");
+  if (!modal) return;
+  modal.classList.add("open");
+  const list = document.getElementById("devicesList");
+  list.innerHTML = "<div style='text-align:center;color:var(--muted);padding:2rem;'>Laden…</div>";
+
+  let devices = [];
+  let blocklist = [];
+  try {
+    if (SCRIPT_URL) {
+      const [devResp, blockResp] = await Promise.all([
+        fetchWithTimeout(SCRIPT_URL + "?action=getDevices&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 15000),
+        fetchWithTimeout(SCRIPT_URL + "?action=getBlocklist&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 15000)
+      ]);
+      if (devResp.ok) { const j = await devResp.json(); if (Array.isArray(j)) devices = j; }
+      if (blockResp.ok) { const j = await blockResp.json(); if (Array.isArray(j)) { blocklist = j; _blocklist = j; } }
+    }
+  } catch(e) {
+    console.warn("Toestellen laden mislukt:", e);
+  }
+
+  renderDevicesList(list, devices, blocklist);
+}
+
+function renderDevicesList(container, devices, blocklist) {
+  const myId = safeGet("ekast-device-id", null);
+  const blockSet = new Set(blocklist.map(function(id) { return id.toUpperCase(); }));
+
+  if (!SCRIPT_URL) {
+    container.innerHTML = "<div style='color:var(--muted);text-align:center;padding:2rem;'>Geen server geconfigureerd.</div>";
+    return;
+  }
+  if (devices.length === 0) {
+    container.innerHTML = "<div style='color:var(--muted);text-align:center;padding:2rem;'>Geen aanmeldingen gevonden in het logboek.</div>";
+    return;
+  }
+
+  container.innerHTML = "";
+  devices.forEach(function(dev) {
+    const isMe = myId && dev.deviceId.toUpperCase() === myId.toUpperCase();
+    const isBlocked = blockSet.has(dev.deviceId.toUpperCase());
+
+    const item = document.createElement("div");
+    item.className = "device-item" + (isBlocked ? " device-blocked" : "") + (isMe ? " device-me" : "");
+
+    const info = document.createElement("div");
+    info.className = "device-info";
+
+    const name = document.createElement("div");
+    name.className = "device-name";
+    name.textContent = dev.deviceName + (isMe ? " — dit toestel" : "");
+
+    const meta = document.createElement("div");
+    meta.className = "device-id";
+    meta.textContent = dev.deviceId + (dev.lastSeen ? "  ·  " + dev.lastSeen : "");
+
+    info.appendChild(name);
+    info.appendChild(meta);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+
+    if (isMe) {
+      btn.className = "device-btn";
+      btn.textContent = "Huidig";
+      btn.disabled = true;
+    } else if (isBlocked) {
+      btn.className = "device-btn device-btn-unblock";
+      btn.textContent = "Deblokkeren";
+      (function(d) {
+        btn.onclick = function() { unblockDeviceAction(d.deviceId, d.deviceName); };
+      })(dev);
+    } else {
+      btn.className = "device-btn device-btn-block";
+      btn.textContent = "Blokkeren";
+      (function(d) {
+        btn.onclick = function() { blockDeviceAction(d.deviceId, d.deviceName); };
+      })(dev);
+    }
+
+    item.appendChild(info);
+    item.appendChild(btn);
+    container.appendChild(item);
   });
+}
+
+function blockDeviceAction(deviceId, deviceName) {
+  showConfirm(
+    "Toestel \"" + deviceName + "\" (" + deviceId + ") blokkeren?\nDit toestel kan daarna niet meer inloggen.",
+    async function() {
+      const myName = safeGet("ekast-device", "");
+      try {
+        const resp = await fetchWithTimeout(
+          SCRIPT_URL + "?action=blockDevice&token=" + encodeURIComponent(API_TOKEN) +
+          "&deviceId=" + encodeURIComponent(deviceId) +
+          "&deviceName=" + encodeURIComponent(deviceName) +
+          "&blockedBy=" + encodeURIComponent(myName) +
+          "&t=" + Date.now(),
+          15000
+        );
+        const json = await resp.json();
+        if (json.ok) { showToast("Toestel geblokkeerd."); openDevicesModal(); }
+        else showToast("Fout: " + (json.error || "onbekend"), true);
+      } catch(e) { showToast("Verbindingsfout bij blokkeren.", true); }
+    }
+  );
+}
+
+function unblockDeviceAction(deviceId, deviceName) {
+  showConfirm(
+    "Blokkade van \"" + deviceName + "\" (" + deviceId + ") opheffen?",
+    async function() {
+      try {
+        const resp = await fetchWithTimeout(
+          SCRIPT_URL + "?action=unblockDevice&token=" + encodeURIComponent(API_TOKEN) +
+          "&deviceId=" + encodeURIComponent(deviceId) +
+          "&t=" + Date.now(),
+          15000
+        );
+        const json = await resp.json();
+        if (json.ok) { showToast("Blokkade opgeheven."); openDevicesModal(); }
+        else showToast("Fout: " + (json.error || "onbekend"), true);
+      } catch(e) { showToast("Verbindingsfout bij deblokkeren.", true); }
+    }
+  );
+}
+
+function closeDevicesModal() {
+  const modal = document.getElementById("devicesModal");
+  if (modal) modal.classList.remove("open");
 }
 
 // ============================================================
