@@ -1889,17 +1889,12 @@ async function fetchAndCheckBlocklist() {
 }
 
 function showAccessDenied() {
-  const deviceName = safeGet("ekast-device", "dit toestel");
-  const deviceId = safeGet("ekast-device-id", "");
   const ov = document.getElementById("pinOverlay");
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
-    "<div style='font-size:1rem;font-weight:700;color:var(--danger);margin-bottom:1rem;text-align:center;'>Toegang geweigerd</div>" +
-    "<div style='max-width:300px;text-align:center;color:var(--muted);font-size:.85rem;line-height:1.8;'>" +
-    "Dit toestel heeft geen toegang meer.<br>" +
-    "<span style='color:var(--text);font-weight:700;'>" + esc(deviceName) + "</span>" +
-    (deviceId ? "<br><code style='font-size:.75rem;'>" + esc(deviceId) + "</code>" : "") +
-    "<br><br>Neem contact op met de<br><strong style='color:var(--text);'>Technische Dienst Sappi</strong>." +
+    "<div style='max-width:300px;text-align:center;color:var(--muted);font-size:.88rem;line-height:1.9;margin-top:.5rem;'>" +
+    "Deze app is enkel bestemd voor de<br>" +
+    "<strong style='color:var(--accent);font-size:1rem;'>Technische Dienst Sappi</strong>." +
     "</div>";
   ov.classList.add("open");
 }
