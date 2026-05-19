@@ -1937,10 +1937,17 @@ async function fetchAndCheckBlocklist() {
     );
     if (resp.ok) {
       const json = await resp.json();
-      if (Array.isArray(json)) _blocklist = json;
+      if (Array.isArray(json)) {
+        _blocklist = json;
+        safeSet("ekast-blocklist-cache", JSON.stringify(json));
+      }
     }
   } catch(e) {
     console.warn("Blocklist ophalen mislukt:", e);
+    const cached = safeGet("ekast-blocklist-cache", null);
+    if (cached) {
+      try { const arr = JSON.parse(cached); if (Array.isArray(arr)) _blocklist = arr; } catch(_) {}
+    }
   }
   const uid = safeGet("ekast-device-id", null);
   if (!uid) return true;
@@ -1978,7 +1985,7 @@ async function openDevicesModal() {
         fetchWithTimeout(SCRIPT_URL + "?action=getBlocklist&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 15000)
       ]);
       if (devResp.ok) { const j = await devResp.json(); if (Array.isArray(j)) devices = j; }
-      if (blockResp.ok) { const j = await blockResp.json(); if (Array.isArray(j)) { blocklist = j; _blocklist = j; } }
+      if (blockResp.ok) { const j = await blockResp.json(); if (Array.isArray(j)) { blocklist = j; _blocklist = j; safeSet("ekast-blocklist-cache", JSON.stringify(j)); } }
     }
   } catch(e) {
     console.warn("Toestellen laden mislukt:", e);
