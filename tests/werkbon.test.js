@@ -78,6 +78,8 @@ eval(searchBlock);
 // Stubs voor functies die we niet testen maar wel gerefereerd worden
 global.showToast = function() {};
 global.setStatus = function() { return Promise.resolve(); };
+global.refreshUI = function() {};
+global.refreshAllLabelBtns = function() {};
 global.logAction = function() {};
 global.safeGet = function(k, d) { return d; };
 global.todayISO = function() { return "2026-04-29"; };

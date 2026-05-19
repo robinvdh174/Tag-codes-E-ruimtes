@@ -497,6 +497,10 @@ async function init() {
   movePill("search");
   updateStatusBadge();
   renderList();
+  // Enter-key submit op de "kast toevoegen"-formulier inputs.
+  _bindEnterSubmit(document.getElementById("newCode"), addEntry);
+  _bindEnterSubmit(document.getElementById("newLocation"), addEntry);
+  _bindEnterSubmit(document.getElementById("newPosition"), addEntry);
   if (!init._dropListener) {
     init._dropListener = true;
     document.addEventListener("click", function(e) {
@@ -1091,11 +1095,15 @@ function _openNaamModal(id, newStatus) {
   } else {
     titelEl.textContent = "Loskoppelen registreren";
   }
-  document.getElementById("statusNaamInput").value = "";
-  document.getElementById("statusDatumInput").value = todayISO();
+  const naamInp = document.getElementById("statusNaamInput");
+  const datumInp = document.getElementById("statusDatumInput");
+  naamInp.value = "";
+  datumInp.value = todayISO();
   document.getElementById("statusNaamError").textContent = "";
   document.getElementById("statusNaamOverlay").classList.add("open");
-  setTimeout(function() { const el = document.getElementById("statusNaamInput"); if (el) el.focus(); }, 150);
+  _bindEnterSubmit(naamInp, bevestigStatusNaam);
+  _bindEnterSubmit(datumInp, bevestigStatusNaam);
+  setTimeout(function() { naamInp.focus(); }, 150);
 }
 
 let _confirmCallback = null;
@@ -1143,7 +1151,8 @@ function formatDatum(raw) {
   return raw;
 }
 
-async function setStatus(id, newStatus, naam, datum) {
+async function setStatus(id, newStatus, naam, datum, opts) {
+  opts = opts || {};
   let idx = -1;
   for (let i = 0; i < data.length; i++) {
     if (data[i].id === id) { idx = i; break; }
@@ -1162,10 +1171,12 @@ async function setStatus(id, newStatus, naam, datum) {
     expectedLastModified: data[idx].lastModified || ""
   });
 
-  // UI meteen updaten — geen wachten op server
+  // UI meteen updaten — geen wachten op server. In batch-modus (silent)
+  // skippen we de re-render zodat een caller die N opeenvolgende status-
+  // updates doet pas één keer hoeft te renderen aan het einde.
   data[idx] = updatedItem;
   saveLocal();
-  refreshUI();
+  if (!opts.silent) refreshUI();
 
   const statusLabel = newStatus === "" ? "Terug In bedrijf" : newStatus === "ok" ? "Veiliggesteld" : "Losgekoppeld";
   const logLabel = statusLabel + (naam ? " \u2014 " + naam : "");
@@ -1366,6 +1377,12 @@ function openEdit(id) {
       document.getElementById("editPosition").value = data[i].position || "";
       document.getElementById("editNote").value = data[i].note || "";
       document.getElementById("editModal").classList.add("open");
+      // Enter in een van de single-line velden = direct opslaan. We laten
+      // de textarea (note) bewust met rust zodat regelafbrekingen daar
+      // gewoon werken — gebruikers kunnen multi-line notities maken.
+      _bindEnterSubmit(document.getElementById("editCode"), saveEdit);
+      _bindEnterSubmit(document.getElementById("editLocation"), saveEdit);
+      _bindEnterSubmit(document.getElementById("editPosition"), saveEdit);
       return;
     }
   }
@@ -1486,7 +1503,17 @@ function attachHoldListeners(btn, id) {
     e.preventDefault();
     btn.classList.add("holding");
     if (bar && !reduceMotion) { bar.style.transition = "width " + HOLD_MS + "ms linear"; bar.style.width = "100%"; }
-    holdTimers[id] = setTimeout(function() { deleteEntry(id); }, HOLD_MS);
+    // Bewaar de huidige btn-reference. Als een refreshUI tijdens de hold
+    // de DOM herrendert, raakt de knop "los" — dan moeten we de delete
+    // niet meer uitvoeren omdat de gebruiker het in feite heeft losgelaten
+    // (er is geen knop meer om op te drukken).
+    holdTimers[id] = setTimeout(function() {
+      if (!btn.isConnected) {
+        delete holdTimers[id];
+        return;
+      }
+      deleteEntry(id);
+    }, HOLD_MS);
   }
   function stop() {
     btn.classList.remove("holding");
@@ -1499,6 +1526,23 @@ function attachHoldListeners(btn, id) {
   btn.addEventListener("mouseleave", stop);
   btn.addEventListener("touchend", stop);
   btn.addEventListener("touchcancel", stop);
+}
+
+// ============================================================
+// MODAL ENTER-KEY HELPERS
+// Hecht een Enter-handler aan een input — handig voor mobiele
+// toetsenborden waar de gebruiker met "OK"/"Enter" submit verwacht.
+// Idempotent: dubbele aanroep voegt geen tweede listener toe.
+// ============================================================
+function _bindEnterSubmit(input, onSubmit) {
+  if (!input || input._enterBound) return;
+  input._enterBound = true;
+  input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onSubmit();
+    }
+  });
 }
 
 // ============================================================
@@ -1539,10 +1583,14 @@ function toggleRoomDropdown(inputId, dropId) {
 // RUIMTE TOEVOEGEN
 // ============================================================
 function openAddRoomModal() {
-  document.getElementById("newRoomName").value = "";
-  document.getElementById("newRoomDesc").value = "";
+  const nameInp = document.getElementById("newRoomName");
+  const descInp = document.getElementById("newRoomDesc");
+  nameInp.value = "";
+  descInp.value = "";
   document.getElementById("addRoomModal").classList.add("open");
-  setTimeout(function() { document.getElementById("newRoomName").focus(); }, 100);
+  _bindEnterSubmit(nameInp, saveNewRoom);
+  _bindEnterSubmit(descInp, saveNewRoom);
+  setTimeout(function() { nameInp.focus(); }, 100);
 }
 
 function closeAddRoomModal() {
@@ -1776,7 +1824,10 @@ function showPinEnter() {
   }
 }
 
-let _pinAttempts = 0;
+// Pin-pogingen worden in localStorage bewaard. Anders zou een refresh de
+// teller resetten en kon iemand de 5-attempts-limiet omzeilen door simpelweg
+// de pagina opnieuw te laden tussen pogingen door.
+let _pinAttempts = parseInt(safeGet("ekast-pin-attempts", "0"), 10) || 0;
 let _pinLockUntil = parseInt(safeGet("ekast-pin-lock", "0"), 10);
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minuten
@@ -1796,6 +1847,7 @@ function startPinLockCountdown() {
       _pinAttempts = 0;
       _pinLockUntil = 0;
       try { localStorage.removeItem("ekast-pin-lock"); } catch(e) {}
+      try { localStorage.removeItem("ekast-pin-attempts"); } catch(e) {}
       errEl.textContent = "";
       input.disabled = false;
       input.focus();
@@ -1826,10 +1878,12 @@ async function verifyPin() {
     const h = await hashPin(input.value);
     if (h === DEVICE_PIN_HASH) {
       _pinAttempts = 0;
+      try { localStorage.removeItem("ekast-pin-attempts"); } catch(e) {}
       logAction("Aanmelding", "", "", "Logboek Aanmeldingen");
       unlockApp();
     } else {
       _pinAttempts++;
+      safeSet("ekast-pin-attempts", _pinAttempts.toString());
       if (_pinAttempts >= PIN_MAX_ATTEMPTS) {
         _pinLockUntil = Date.now() + PIN_LOCKOUT_MS;
         safeSet("ekast-pin-lock", _pinLockUntil.toString());
@@ -2067,7 +2121,11 @@ function showAdminCodePrompt() {
   if (!ov) return;
   const inp = document.getElementById("adminCodeInput");
   const err = document.getElementById("adminCodeErr");
-  if (inp) { inp.value = ""; inp.disabled = false; }
+  if (inp) {
+    inp.value = "";
+    inp.disabled = false;
+    _bindEnterSubmit(inp, verifyAdminCode);
+  }
   if (err) err.textContent = "";
   ov.classList.add("open");
   setTimeout(function() { if (inp) inp.focus(); }, 150);
@@ -2115,13 +2173,21 @@ function _loadTesseract() {
     s.src = TESSERACT_LOCAL;
     s.async = true;
     s.onload = function() {
-      if (typeof Tesseract !== "undefined") resolve(window.Tesseract);
-      else { _tesseractLoadPromise = null; reject(new Error("Tesseract niet beschikbaar na laden")); }
+      if (typeof Tesseract !== "undefined") {
+        resolve(window.Tesseract);
+      } else {
+        // Verwijder de script-tag zodat een retry een schone state krijgt;
+        // anders stapelen failed <script> elementen zich op in <head>.
+        if (s.parentNode) s.parentNode.removeChild(s);
+        _tesseractLoadPromise = null;
+        reject(new Error("Tesseract niet beschikbaar na laden"));
+      }
     };
     s.onerror = function() {
       // Reset zodat een volgende poging (bv. nadat de SW de assets
       // heeft gecached) opnieuw kan proberen i.p.v. de gecachete
-      // rejection te krijgen.
+      // rejection te krijgen. Verwijder ook de gefaalde script-tag.
+      if (s.parentNode) s.parentNode.removeChild(s);
       _tesseractLoadPromise = null;
       reject(new Error("Kon scan-bibliotheek niet laden — herlaad de app en probeer opnieuw."));
     };
@@ -2837,7 +2903,7 @@ function renderLabelsTab() {
     container.appendChild(hdr);
     groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
     for (let i = 0; i < groups[loc].length; i++) {
-      container.appendChild(_wbItemRow(groups[loc][i], false));
+      container.appendChild(_wbItemRow(groups[loc][i]));
     }
   }
 }
@@ -2866,6 +2932,8 @@ function openAfwerkenModal() {
     try { naam.value = safeGet("ekast-device", "") || ""; } catch (e) {}
   }
   if (datum && !datum.value) datum.value = todayISO();
+  if (naam) _bindEnterSubmit(naam, werkbonFinalize);
+  if (datum) _bindEnterSubmit(datum, werkbonFinalize);
   const items = _wbResolveItems();
   const markedCount = items.filter(function(it) { return it.id in _werkbon.done; }).length;
   const prog = document.getElementById("wbProgress");
@@ -2937,9 +3005,12 @@ async function werkbonFinalize() {
   try {
     for (let i = 0; i < markedItems.length; i++) {
       if (progressEl) progressEl.textContent = (i + 1) + " / " + markedItems.length + " verwerkt…";
-      await setStatus(markedItems[i].id, _werkbon.done[markedItems[i].id], naam, datum);
+      // silent=true: vermijdt N volledige refreshUI-cycles in een lus
+      // (~O(items × data.length) DOM-ops); we doen één refresh aan het einde.
+      await setStatus(markedItems[i].id, _werkbon.done[markedItems[i].id], naam, datum, { silent: true });
     }
     if (progressEl) progressEl.textContent = "";
+    refreshUI();
     // Alleen de daadwerkelijk verwerkte (gemarkeerde) kasten verwijderen.
     // Ongemarkeerde labels blijven in de stapel staan zodat de gebruiker
     // ze in een volgende sessie kan afwerken — voorheen verloor men ze.
@@ -2977,41 +3048,7 @@ function werkbonClearAll() {
 }
 
 
-function _wbItemRow(item, isChecklistRow) {
-  if (isChecklistRow) {
-    const row = document.createElement("div");
-    row.className = "wb-check-row";
-    const isDone = (item.id in _werkbon.done);
-    const cb = document.createElement("button");
-    cb.type = "button";
-    cb.className = "wb-checkbox" + (isDone ? " done" : "");
-    cb.textContent = isDone ? "\u2713" : "";
-    cb.setAttribute("aria-label", isDone ? "Afgerond" : "Markeer als gedaan");
-    row.appendChild(cb);
-    const info = document.createElement("div");
-    info.className = "wb-item-info";
-    const codeEl = document.createElement("div");
-    codeEl.className = "wb-item-code";
-    if (item.code) {
-      codeEl.textContent = item.code;
-      info.appendChild(codeEl);
-    }
-    if (item.note) {
-      const n = document.createElement("div");
-      n.className = "wb-item-note";
-      n.textContent = item.note;
-      info.appendChild(n);
-    }
-    if (item.position) {
-      const p = document.createElement("div");
-      p.className = "wb-item-pos";
-      p.textContent = "\uD83D\uDCCD " + item.position;
-      info.appendChild(p);
-    }
-    row.appendChild(info);
-    return row;
-  }
-
+function _wbItemRow(item) {
   const card = document.createElement("div");
   card.className = "card";
   card.style.cursor = "default";
