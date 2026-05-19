@@ -1,7 +1,7 @@
 :root{--bg:#0d0f12;--surface:#151820;--border:#2a3045;--accent:#f0a500;--text:#dde3f0;--muted:#7a8a9a;--danger:#e03c3c;--success:#2ecc71;--header-h:64px;}
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:sans-serif;padding-bottom:2rem;}
-header{background:var(--surface);border-bottom:2px solid var(--accent);padding:.75rem 1.2rem;position:sticky;top:0;z-index:100;}
+body{background:var(--bg);color:var(--text);font-family:sans-serif;padding-bottom:max(2rem,env(safe-area-inset-bottom));}
+header{background:var(--surface);border-bottom:2px solid var(--accent);padding:max(.75rem,env(safe-area-inset-top)) max(1.2rem,env(safe-area-inset-right)) .75rem max(1.2rem,env(safe-area-inset-left));position:sticky;top:0;z-index:100;}
 .header-row{display:flex;justify-content:space-between;align-items:center;}
 h1{font-size:1.3rem;font-weight:900;}
 p.sub{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
@@ -159,9 +159,6 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .wb-item-del{background:transparent;border:none;color:var(--danger);font-size:1.2rem;font-weight:700;cursor:pointer;width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;}
 .wb-item-del:active{background:#3a0a0a;}
 .wb-progress{font-size:.85rem;font-weight:700;color:var(--accent);text-align:center;margin:.8rem 0;font-family:monospace;letter-spacing:.05em;}
-.wb-check-row{display:grid;grid-template-columns:auto 1fr;gap:.6rem;align-items:center;padding:.6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:.4rem;}
-.wb-checkbox{width:32px;height:32px;border-radius:6px;border:2px solid var(--accent);background:transparent;color:var(--accent);font-size:1.1rem;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.wb-checkbox.done{background:var(--success);border-color:var(--success);color:#000;cursor:default;}
 input[type=date]{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:.75rem 1rem;color:var(--text);font-size:1rem;outline:none;font-family:monospace;-webkit-appearance:none;}
 input[type=date]:focus{border-color:var(--accent);}
 .btn-room-add{padding:.35rem .75rem;background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap;}
@@ -187,11 +184,6 @@ input[type=date]:focus{border-color:var(--accent);}
 .labels-list-container{flex:1;}
 .labels-footer{padding-top:.9rem;margin-top:.4rem;border-top:1px solid var(--border);}
 .wb-footer-progress{font-size:.78rem;color:var(--muted);text-align:center;margin-bottom:.5rem;font-family:monospace;}
-.wb-item-status-row{display:flex;gap:.35rem;margin-top:.55rem;}
-.wb-item-sbtn{flex:1;padding:.4rem .2rem;border-radius:20px;border:1px solid var(--border);background:#1c2030;color:var(--muted);font-size:.7rem;font-weight:700;cursor:pointer;text-align:center;white-space:nowrap;}
-.wb-item-sbtn.sel-ok{background:#3a2a00;color:var(--accent);border-color:var(--accent);}
-.wb-item-sbtn.sel-los{background:#3a0a0a;color:var(--danger);border-color:var(--danger);}
-.wb-item-sbtn.sel-vrij{background:#1a3a2a;color:var(--success);border-color:var(--success);}
 .list-room-header{grid-column:1/-1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.09em;padding:.55rem .2rem .35rem;border-bottom:2px solid var(--accent);margin-top:1.1rem;margin-bottom:.5rem;}
 .list-room-header:first-child{margin-top:0;}
 /* ===== TOEGANKELIJKHEID ===== */

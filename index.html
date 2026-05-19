@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; script-src-elem 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
 <title>E-Kast Zoeker</title>
@@ -67,7 +67,7 @@
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
     <div class="search-bar-wrap" style="margin-top:.5rem">
       <span class="search-bar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten">
+      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten" maxlength="80">
       <div class="search-bar-divider" aria-hidden="true"></div>
       <button type="button" class="search-bar-cam" onclick="openScan()" aria-label="Bon scannen met camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
     </div>
@@ -202,7 +202,7 @@
 <!-- Beheerderstoegang (verborgen) -->
 <div class="pin-overlay" id="adminCodeOverlay" style="z-index:510;">
   <div class="pin-title">Beheer</div>
-  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')verifyAdminCode()" style="letter-spacing:.2em;width:200px;" maxlength="20">
+  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" style="letter-spacing:.2em;width:200px;" maxlength="20">
   <div class="pin-error" id="adminCodeErr"></div>
   <div style="display:flex;gap:.8rem;margin-top:1.2rem;">
     <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" onclick="closeAdminCodePrompt()">Annuleren</button>
@@ -223,7 +223,7 @@
 </div>
 
 <!-- Ruimte toevoegen modal -->
-<div class="modal-overlay" id="addRoomModal" onclick="if(event.target===this)closeAddRoomModal()">
+<div class="modal-overlay" id="addRoomModal" onclick="if(event.target===this)closeAddRoomModal()" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="modal-title">Ruimte / Locatie toevoegen</div>
     <div class="form-group">
