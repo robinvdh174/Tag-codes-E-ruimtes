@@ -202,7 +202,7 @@
 <!-- Beheerderstoegang (verborgen) -->
 <div class="pin-overlay" id="adminCodeOverlay" style="z-index:510;">
   <div class="pin-title">Beheer</div>
-  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" oninput="" style="letter-spacing:.2em;width:200px;" maxlength="20">
+  <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')verifyAdminCode()" style="letter-spacing:.2em;width:200px;" maxlength="20">
   <div class="pin-error" id="adminCodeErr"></div>
   <div style="display:flex;gap:.8rem;margin-top:1.2rem;">
     <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" onclick="closeAdminCodePrompt()">Annuleren</button>
