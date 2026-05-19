@@ -1283,7 +1283,6 @@ async function addEntry() {
   let loc = document.getElementById("newLocation").value.trim();
   const note = document.getElementById("newNote").value.trim();
   const position = document.getElementById("newPosition").value.trim();
-  if (!code) { showToast("Vul een code in!", true); return; }
   if (!loc) { showToast("Vul een ruimte in!", true); return; }
   const canonicalLoc = findRoom(loc);
   if (!canonicalLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
@@ -1291,16 +1290,18 @@ async function addEntry() {
   // Verschillende kasten mogen dezelfde code hebben (bv. gespiegelde
   // installaties of identiek genoemde kasten in dezelfde ruimte). Bij een
   // duplicaat vragen we om bevestiging zodat het niet per ongeluk gebeurt.
-  const codeNorm = code.toLowerCase();
-  const dup = data.find(function(d) {
-    return d.location === loc && (d.code || "").trim().toLowerCase() === codeNorm;
-  });
-  if (dup) {
-    showConfirm(
-      "Code '" + code + "' bestaat al in " + loc + ". Toch opslaan?",
-      function() { _saveNewEntry(code, loc, position, note); }
-    );
-    return;
+  if (code) {
+    const codeNorm = code.toLowerCase();
+    const dup = data.find(function(d) {
+      return d.location === loc && (d.code || "").trim().toLowerCase() === codeNorm;
+    });
+    if (dup) {
+      showConfirm(
+        "Code '" + code + "' bestaat al in " + loc + ". Toch opslaan?",
+        function() { _saveNewEntry(code, loc, position, note); }
+      );
+      return;
+    }
   }
   _saveNewEntry(code, loc, position, note);
 }
