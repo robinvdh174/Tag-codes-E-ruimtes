@@ -1997,7 +1997,7 @@ function renderDevicesList(container, devices, blocklist) {
 
 function blockDeviceAction(deviceId, deviceName) {
   showConfirm(
-    "Toestel \"" + deviceName + "\" (" + deviceId + ") blokkeren?\nDit toestel kan daarna niet meer inloggen.",
+    "Toestel \"" + deviceName + "\" (" + deviceId + ") blokkeren? Dit toestel kan daarna niet meer inloggen.",
     async function() {
       const myName = safeGet("ekast-device", "");
       try {
