@@ -23,7 +23,14 @@ self.addEventListener("install", function(e) {
       console.warn("SW install cache fout:", err);
     })
   );
-  self.skipWaiting();
+  // Geen skipWaiting() hier: de nieuwe SW wacht tot de gebruiker via de
+  // update-banner bevestigt (zie app.js). Direct activeren zou de pagina
+  // midden in een formulier-invul-sessie herladen.
+});
+
+// De pagina stuurt dit bericht wanneer de gebruiker op "Vernieuwen" tikt.
+self.addEventListener("message", function(e) {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", function(e) {

@@ -1,8 +1,12 @@
 {
+  "id": "./",
   "name": "E-Kast Zoeker",
   "short_name": "E-Kast",
   "description": "Verdelers zoeken - Sappi",
+  "lang": "nl",
+  "dir": "ltr",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0d0f12",
   "theme_color": "#f0a500",

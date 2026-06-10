@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; script-src-elem 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; script-src-elem 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
 <title>E-Kast Zoeker</title>
 <link rel="preconnect" href="https://script.google.com" crossorigin>
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
@@ -28,7 +28,7 @@
       <h1 id="appTitle" style="cursor:default;user-select:none;">E-KAST ZOEKER</h1>
       <p class="sub">Verdelers &bull; Sappi <span class="app-version-badge" id="appVersionBadge"></span></p>
     </div>
-    <button class="sync-badge idle" id="syncBadge" type="button" onclick="manualSync()" title="Klik om te synchroniseren" aria-label="Synchronisatiestatus — klik om te synchroniseren">
+    <button class="sync-badge idle" id="syncBadge" type="button" title="Klik om te synchroniseren" aria-label="Synchronisatiestatus — klik om te synchroniseren">
       <div class="sync-dot" aria-hidden="true"></div>
       <span id="syncLabel">Offline</span>
       <div class="sync-bar" aria-hidden="true"></div>
@@ -39,23 +39,23 @@
 <div class="tabs-pill-wrap">
   <div class="tabs-pill-container" id="tabsContainer" role="tablist" aria-label="Navigatie">
     <div class="tabs-pill" id="tabsPill"></div>
-    <button class="tab-pill active" id="tbtn-search" onclick="switchTab('search')" role="tab" aria-selected="true" aria-controls="tab-search" aria-label="Zoeken">
+    <button class="tab-pill active" id="tbtn-search" role="tab" aria-selected="true" aria-controls="tab-search" aria-label="Zoeken">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
       <span class="tab-label">ZOEKEN</span>
     </button>
-    <button class="tab-pill" id="tbtn-list" onclick="switchTab('list')" role="tab" aria-selected="false" aria-controls="tab-list" aria-label="Lijst">
+    <button class="tab-pill" id="tbtn-list" role="tab" aria-selected="false" aria-controls="tab-list" aria-label="Lijst">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
       <span class="tab-label">LIJST</span>
     </button>
-    <button class="tab-pill" id="tbtn-status" onclick="switchTab('status')" role="tab" aria-selected="false" aria-controls="tab-status" aria-label="Status">
+    <button class="tab-pill" id="tbtn-status" role="tab" aria-selected="false" aria-controls="tab-status" aria-label="Status">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span class="status-badge hidden" id="statusBadge" aria-live="polite">0</span></span>
       <span class="tab-label">STATUS</span>
     </button>
-    <button class="tab-pill" id="tbtn-bonnen" onclick="switchTab('bonnen')" role="tab" aria-selected="false" aria-controls="tab-bonnen" aria-label="Labels">
+    <button class="tab-pill" id="tbtn-bonnen" role="tab" aria-selected="false" aria-controls="tab-bonnen" aria-label="Labels">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span class="status-badge hidden" id="wbBadge" aria-live="polite">0</span></span>
       <span class="tab-label">LABELS</span>
     </button>
-    <button class="tab-pill" id="tbtn-add" onclick="switchTab('add')" role="tab" aria-selected="false" aria-controls="tab-add" aria-label="Toevoegen">
+    <button class="tab-pill" id="tbtn-add" role="tab" aria-selected="false" aria-controls="tab-add" aria-label="Toevoegen">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
       <span class="tab-label">TOEVOEGEN</span>
     </button>
@@ -67,9 +67,9 @@
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
     <div class="search-bar-wrap" style="margin-top:.5rem">
       <span class="search-bar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." oninput="doSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten" maxlength="80">
+      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten" maxlength="80">
       <div class="search-bar-divider" aria-hidden="true"></div>
-      <button type="button" class="search-bar-cam" onclick="openScan()" aria-label="Bon scannen met camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      <button type="button" class="search-bar-cam" id="btnScanCam" aria-label="Bon scannen met camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
     </div>
     <div class="count">Gevonden: <b id="resultCount">0</b></div>
     <div id="searchResults" class="card-grid">
@@ -98,12 +98,12 @@
     <div class="labels-header">
       <span class="labels-header-title">Stapel Labels</span>
       <span class="labels-header-count hidden" id="labelsCount">0</span>
-      <button class="labels-clear-btn" type="button" onclick="werkbonClearAll()">Leegmaken</button>
+      <button class="labels-clear-btn" type="button" id="btnLabelsClear">Leegmaken</button>
     </div>
     <div id="labelsListContainer" class="labels-list-container"></div>
     <div class="labels-footer" id="labelsFooter" style="display:none">
       <div class="wb-footer-progress" id="wbFooterProgress"></div>
-      <button class="btn-primary" type="button" onclick="openAfwerkenModal()" style="margin-top:0">&#10003; Klaar</button>
+      <button class="btn-primary" type="button" id="btnAfwerken" style="margin-top:0">&#10003; Klaar</button>
     </div>
   </div>
 
@@ -111,7 +111,7 @@
   <div id="tab-add" class="panel" role="tabpanel" aria-labelledby="tbtn-add">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;">
       <div class="section-title" style="margin-bottom:0">Nieuwe kast toevoegen</div>
-      <button class="btn-room-add" onclick="openAddRoomModal()" type="button">+ Ruimte</button>
+      <button class="btn-room-add" id="btnRoomAdd" type="button">+ Ruimte</button>
     </div>
 
     <!-- Setup instructies (verbergt zich zodra URL is ingesteld) -->
@@ -124,7 +124,7 @@
     <div class="form-group"><label>Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" maxlength="50">
-        <button class="btn-room-pick" onclick="toggleRoomDropdown('newLocation','roomDrop1')" type="button">&#9660;</button>
+        <button class="btn-room-pick" id="btnRoomDrop1" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
     </div>
@@ -132,12 +132,12 @@
       <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off" maxlength="100">
     </div>
     <div class="form-group"><label>Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..." maxlength="500"></textarea></div>
-    <button class="btn-primary" id="btnAdd" onclick="addEntry()">OPSLAAN</button>
+    <button class="btn-primary" id="btnAdd">OPSLAAN</button>
   </div>
 </main>
 
 <!-- Afwerken modal -->
-<div class="modal-overlay" id="werkbonModal" onclick="if(event.target===this)closeAfwerkenModal()" role="dialog" aria-modal="true" aria-labelledby="wbModalTitle">
+<div class="modal-overlay" id="werkbonModal" role="dialog" aria-modal="true" aria-labelledby="wbModalTitle">
   <div class="modal" style="max-width:420px;">
     <div class="modal-title" id="wbModalTitle">&#10003; Gemarkeerde kasten afwerken</div>
     <p class="scan-help" style="margin-bottom:1rem;">Alleen gemarkeerde kasten krijgen de gekozen status. Ongemarkeerde labels blijven in je stapel staan voor later.</p>
@@ -151,20 +151,20 @@
     </div>
     <div class="wb-progress" id="wbProgress" aria-live="polite"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" type="button" onclick="closeAfwerkenModal()">&larr; Terug</button>
-      <button class="btn-primary" id="wbFinalizeBtn" type="button" onclick="werkbonFinalize()" style="margin-top:0;">Bevestigen</button>
+      <button class="btn-cancel" type="button" id="wbCancelBtn">&larr; Terug</button>
+      <button class="btn-primary" id="wbFinalizeBtn" type="button" style="margin-top:0;">Bevestigen</button>
     </div>
   </div>
 </div>
 
 <!-- Bon-scan modal -->
-<div class="modal-overlay" id="scanModal" onclick="if(event.target===this)closeScan()">
+<div class="modal-overlay" id="scanModal">
   <div class="modal" style="max-width:380px;">
     <div class="modal-title">&#128247; Bon scannen</div>
-    <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="position:absolute;left:-9999px;top:-9999px;" onchange="onScanFileChosen(event)">
+    <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="position:absolute;left:-9999px;top:-9999px;">
     <div id="scanInitial">
       <p class="scan-help">Maak een foto van de bon. De app leest de tag-code automatisch en gooit de foto daarna weg &mdash; ze wordt nergens bewaard.</p>
-      <button class="btn-primary" type="button" onclick="document.getElementById('scanFileInput').click()">&#128247; Foto maken</button>
+      <button class="btn-primary" type="button" id="btnScanFoto">&#128247; Foto maken</button>
     </div>
     <div id="scanProcessing" style="display:none;text-align:center;padding:1.5rem 0;">
       <div class="scan-spinner" aria-hidden="true"></div>
@@ -172,13 +172,13 @@
     </div>
     <div id="scanResult" style="display:none;"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" type="button" onclick="closeScan()">Sluiten</button>
+      <button class="btn-cancel" type="button" id="btnScanClose">Sluiten</button>
     </div>
   </div>
 </div>
 
 <!-- Bewerk modal -->
-<div class="modal-overlay" id="editModal" onclick="if(event.target===this)closeModal()">
+<div class="modal-overlay" id="editModal">
   <div class="modal">
     <div class="modal-title">Kast bewerken</div>
     <input type="hidden" id="editId">
@@ -186,15 +186,15 @@
     <div class="form-group"><label>Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="editLocation" autocomplete="off" maxlength="50">
-        <button class="btn-room-pick" onclick="toggleRoomDropdown('editLocation','roomDrop2')" type="button">&#9660;</button>
+        <button class="btn-room-pick" id="btnRoomDrop2" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop2"></div>
       </div>
     </div>
     <div class="form-group"><label>Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan" maxlength="100"></div>
     <div class="form-group"><label>Component</label><textarea id="editNote" maxlength="500"></textarea></div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal()">Annuleren</button>
-      <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" onclick="saveEdit()">Opslaan</button>
+      <button class="btn-cancel" id="btnEditCancel" type="button">Annuleren</button>
+      <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" type="button">Opslaan</button>
     </div>
   </div>
 </div>
@@ -205,25 +205,25 @@
   <input type="password" class="pin-input" id="adminCodeInput" placeholder="••••" autocomplete="new-password" style="letter-spacing:.2em;width:200px;" maxlength="20">
   <div class="pin-error" id="adminCodeErr"></div>
   <div style="display:flex;gap:.8rem;margin-top:1.2rem;">
-    <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" onclick="closeAdminCodePrompt()">Annuleren</button>
-    <button class="btn-primary" style="flex:1;margin-top:0;" type="button" onclick="verifyAdminCode()">OK</button>
+    <button class="btn-cancel" style="flex:1;padding:.7rem;" type="button" id="adminCodeCancelBtn">Annuleren</button>
+    <button class="btn-primary" style="flex:1;margin-top:0;" type="button" id="adminCodeOkBtn">OK</button>
   </div>
 </div>
 
 <!-- Toestellen beheer modal -->
-<div class="modal-overlay" id="devicesModal" onclick="if(event.target===this)closeDevicesModal()" role="dialog" aria-modal="true" aria-labelledby="devicesModalTitle">
+<div class="modal-overlay" id="devicesModal" role="dialog" aria-modal="true" aria-labelledby="devicesModalTitle">
   <div class="modal" style="max-width:480px;">
     <div class="modal-title" id="devicesModalTitle">Toestellen beheren</div>
     <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Beheer welke toestellen toegang hebben tot de app. Geblokkeerde toestellen krijgen bij de volgende aanmelding een foutmelding te zien.</p>
     <div id="devicesList"></div>
     <div class="modal-btns" style="margin-top:1.2rem;">
-      <button class="btn-cancel" type="button" onclick="closeDevicesModal()">&larr; Sluiten</button>
+      <button class="btn-cancel" type="button" id="devicesCloseBtn">&larr; Sluiten</button>
     </div>
   </div>
 </div>
 
 <!-- Ruimte toevoegen modal -->
-<div class="modal-overlay" id="addRoomModal" onclick="if(event.target===this)closeAddRoomModal()" role="dialog" aria-modal="true">
+<div class="modal-overlay" id="addRoomModal" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="modal-title">Ruimte / Locatie toevoegen</div>
     <div class="form-group">
@@ -235,8 +235,8 @@
       <input type="text" id="newRoomDesc" placeholder="bv. gelijkvloers, links van de ingang" autocomplete="off" maxlength="100">
     </div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeAddRoomModal()">Annuleren</button>
-      <button class="btn-primary" style="margin-top:0" onclick="saveNewRoom()">Opslaan</button>
+      <button class="btn-cancel" id="addRoomCancelBtn" type="button">Annuleren</button>
+      <button class="btn-primary" id="addRoomSaveBtn" style="margin-top:0" type="button">Opslaan</button>
     </div>
   </div>
 </div>
@@ -244,22 +244,22 @@
 <div class="toast" id="toast"></div>
 
 <!-- Bevestiging modal (vervangt browser confirm) -->
-<div class="status-popup" id="confirmOverlay" onclick="confirmNee()">
-  <div class="status-popup-card" onclick="event.stopPropagation()" style="max-width:320px;">
+<div class="status-popup" id="confirmOverlay">
+  <div class="status-popup-card" style="max-width:320px;">
     <div class="status-popup-title" style="color:var(--danger);font-size:.85rem;">&#9888; Bevestiging vereist</div>
     <p id="confirmMsg" style="font-size:.88rem;color:var(--text);margin:.6rem 0 1.1rem;line-height:1.55;text-align:left;"></p>
-    <button class="status-btn-keuze status-btn-los" onclick="confirmJa()" style="margin-bottom:.5rem;">Ja, doorgaan</button>
-    <button class="status-btn-keuze" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);" onclick="confirmNee()">Annuleren</button>
+    <button class="status-btn-keuze status-btn-los" id="confirmJaBtn" type="button" style="margin-bottom:.5rem;">Ja, doorgaan</button>
+    <button class="status-btn-keuze" id="confirmNeeBtn" type="button" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);">Annuleren</button>
   </div>
 </div>
-<div class="status-popup" id="statusPopup" onclick="closeStatusKeuze()">
-  <div class="status-popup-card" onclick="event.stopPropagation()">
+<div class="status-popup" id="statusPopup">
+  <div class="status-popup-card">
     <div class="status-popup-title" id="statusPopupTitle">Kies status</div>
     <div id="statusPopupBtns"></div>
   </div>
 </div>
 <div class="status-naam-overlay" id="statusNaamOverlay">
-  <div class="status-naam-card" onclick="event.stopPropagation()">
+  <div class="status-naam-card">
     <div class="status-popup-title" id="statusNaamTitel">Registreer statuswijziging</div>
     <div class="form-group">
       <label>Jouw naam</label>
@@ -271,26 +271,26 @@
     </div>
     <div class="status-naam-error" id="statusNaamError"></div>
     <div style="display:flex;gap:.6rem;margin-top:.9rem;">
-      <button class="btn-cancel" onclick="sluitStatusNaamModal()">Annuleren</button>
-      <button class="btn-primary" style="flex:1" onclick="bevestigStatusNaam()">Bevestigen</button>
+      <button class="btn-cancel" id="statusNaamCancelBtn" type="button">Annuleren</button>
+      <button class="btn-primary" id="statusNaamOkBtn" style="flex:1" type="button">Bevestigen</button>
     </div>
   </div>
 </div>
-<div class="info-popup-overlay" id="infoPopupOverlay" onclick="closeInfoPopup()">
-  <div class="info-popup" onclick="event.stopPropagation()">
+<div class="info-popup-overlay" id="infoPopupOverlay">
+  <div class="info-popup">
     <div class="info-popup-title" id="infoPopupTitle"></div>
     <div class="info-popup-body" id="infoPopupBody"></div>
-    <button class="info-popup-close" onclick="closeInfoPopup()">Sluiten</button>
+    <button class="info-popup-close" id="infoPopupCloseBtn" type="button">Sluiten</button>
   </div>
 </div>
 <div class="pin-overlay" id="pinOverlay"></div>
 <div class="status-popup" id="conflictOverlay">
-  <div class="status-popup-card" onclick="event.stopPropagation()" style="max-width:340px;">
+  <div class="status-popup-card" style="max-width:340px;">
     <div class="status-popup-title" style="color:#f39c12;font-size:.85rem;">&#9888; Conflict gedetecteerd</div>
     <p style="font-size:.82rem;color:var(--text);margin:.4rem 0 .6rem;line-height:1.5;">Dit record is ondertussen door een ander toestel gewijzigd.</p>
     <div id="conflictBody" style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem;max-height:200px;overflow-y:auto;"></div>
-    <button class="status-btn-keuze status-btn-veilig" onclick="resolveConflict('mine')" style="margin-bottom:.5rem;">Mijn versie bewaren</button>
-    <button class="status-btn-keuze" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);" onclick="resolveConflict('server')">Server versie overnemen</button>
+    <button class="status-btn-keuze status-btn-veilig" id="conflictMineBtn" type="button" style="margin-bottom:.5rem;">Mijn versie bewaren</button>
+    <button class="status-btn-keuze" id="conflictServerBtn" type="button" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);">Server versie overnemen</button>
   </div>
 </div>
 

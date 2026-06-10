@@ -15,7 +15,12 @@ Mobiele web-app voor Sappi om elektrische verdeelkasten te zoeken, beheren en de
 ```bash
 node tests/run.js
 ```
-De testsuite valideert de OCR-bonparser en de werkbon-state-logica. Voer hem uit voor je wijzigingen pusht.
+De testsuite valideert de OCR-bonparser en de werkbon-state-logica. Voer hem uit voor je wijzigingen pusht. Dezelfde suite draait automatisch via GitHub Actions bij elke push en pull request.
+
+## Backend bijwerken (Code.gs)
+Na een wijziging aan `Code.gs` moet het script opnieuw gedeployed worden in de Apps Script-editor (Implementeren → Implementaties beheren → potlood-icoon → Nieuwe versie). De app werkt ook met een oudere deployment: schrijfacties vallen dan automatisch terug op het oude GET-pad, maar de verbeteringen (POST-schrijfacties, script-lock tegen gelijktijdige wijzigingen) zijn pas actief na herdeployen.
+
+De API-token kan geroteerd worden zonder code-wijziging via Apps Script → Projectinstellingen → Scripteigenschappen → sleutel `API_TOKEN` (en dezelfde waarde in `app.js` bovenaan).
 
 ## Hoe wijzigingen doorvoeren (git workflow)
 

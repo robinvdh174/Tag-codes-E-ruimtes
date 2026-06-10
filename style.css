@@ -205,6 +205,10 @@ input[type=date]:focus{border-color:var(--accent);}
 .device-btn-block{color:var(--danger);border-color:var(--danger);}
 .device-btn-unblock{color:var(--success);border-color:var(--success);}
 .device-btn:disabled{opacity:.4;cursor:not-allowed;color:var(--muted);border-color:var(--muted);}
+/* ===== UPDATE BANNER ===== */
+.update-banner{position:fixed;left:50%;bottom:max(1rem,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:.9rem;background:var(--surface);border:1.5px solid var(--accent);border-radius:12px;padding:.7rem 1rem;z-index:600;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:.85rem;font-weight:700;white-space:nowrap;}
+.update-banner button{background:var(--accent);color:#000;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.8rem;font-weight:900;cursor:pointer;}
+.update-banner button:disabled{opacity:.6;cursor:wait;}
 /* ===== REDUCED MOTION ===== */
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}
