@@ -1,5 +1,5 @@
 // ============================================================
-// E-KAST ZOEKER — Google Apps Script Backend v3
+// E-KAST ZOEKER — Google Apps Script Backend v4
 // ============================================================
 
 var SPREADSHEET_ID = "1TZ18nMFeALPOjioHmFnaHFaTWqeRkupZcXbqEygzH5w";
@@ -44,6 +44,64 @@ function getApiToken_() {
 // verschuiven (deleteRow op een verschoven index = verkeerde rij weg).
 var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, blockDevice: 1, unblockDevice: 1 };
 
+// Logboek-tabbladen die de client mag aanspreken. Al het andere valt terug
+// op "Logboek" — anders kan iedereen met de token onbeperkt tabbladen
+// aanmaken in de spreadsheet.
+var LOG_SHEETS = {
+  "Logboek": 1,
+  "Logboek Aanmeldingen": 1,
+  "Logboek Toevoegingen": 1,
+  "Logboek Status": 1,
+  "Logboek Bewerkingen": 1,
+  "Logboek Verwijderingen": 1
+};
+
+// Maximale veldlengtes server-side (iets ruimer dan de maxlength-attributen
+// in de app). Te lange waarden worden afgekapt i.p.v. geweigerd: een harde
+// fout zou offline-queue-entries van legitieme gebruikers permanent laten
+// mislukken.
+var FIELD_MAX = { id: 80, code: 60, location: 60, note: 600, position: 120, added: 40, addedby: 120, statusBy: 120, statusDate: 40, lastModified: 40 };
+var VALID_STATUS = { "": 1, "ok": 1, "losgekoppeld": 1 };
+
+// Bewust gegooide fouten waarvan de tekst veilig naar de client mag.
+// Onverwachte fouten (Apps Script-internals) kunnen gevoelige details
+// bevatten zoals het spreadsheet-ID — die blijven in de serverlog en de
+// client krijgt een generieke melding (zie handleRequest_).
+function appError_(msg) {
+  var e = new Error(msg);
+  e.isAppError = true;
+  return e;
+}
+
+// Sheets interpreteert celwaarden die met "=" beginnen (en bij handmatige
+// invoer ook "+" of "@") als formule. Een leidende apostrof dwingt tekst af;
+// Sheets toont en retourneert de waarde daarna zonder de apostrof. Alleen
+// toepassen op het moment van wegschrijven, zodat vergelijkingen met
+// teruggelezen waarden blijven kloppen.
+function sanitizeCell_(val) {
+  var s = String(val == null ? "" : val);
+  return /^[=+@]/.test(s) ? "'" + s : s;
+}
+
+// Valideert het JSON-object van een add/update: verplicht id, status uit de
+// vaste lijst, veldlengtes afgekapt op FIELD_MAX.
+function validateItem_(dataParam, actionName) {
+  if (!dataParam) throw appError_("Geen data voor " + actionName);
+  var item;
+  try {
+    item = JSON.parse(dataParam);
+  } catch (err) {
+    throw appError_("Ongeldige data voor " + actionName);
+  }
+  if (!item || typeof item !== "object" || !item.id) throw appError_("Ontbrekend id voor " + actionName);
+  if (!VALID_STATUS.hasOwnProperty(String(item.status || ""))) throw appError_("Ongeldige status voor " + actionName);
+  Object.keys(FIELD_MAX).forEach(function(h) {
+    if (item[h] == null) return;
+    item[h] = String(item[h]).slice(0, FIELD_MAX[h]);
+  });
+  return item;
+}
+
 function handleRequest_(params) {
   try {
     if (!params || params.token !== getApiToken_()) {
@@ -65,13 +123,13 @@ function handleRequest_(params) {
     }
     return makeResponse(dispatch_(action, params));
   } catch (err) {
-    Logger.log("handleRequest fout: " + err.message);
-    return makeResponse({ error: err.message });
+    Logger.log("handleRequest fout: " + err.message + (err.stack ? "\n" + err.stack : ""));
+    return makeResponse({ error: err.isAppError ? err.message : "Serverfout, probeer het opnieuw" });
   }
 }
 
 function dispatch_(action, params) {
-  if (action === "version")  return { version: "v3", ok: true };
+  if (action === "version")  return { version: "v4", ok: true };
   if (action === "get")      return handleGet();
   if (action === "add")      return handleAdd(params.data);
   if (action === "update")   return handleUpdate(params.data);
@@ -135,13 +193,12 @@ function handleGet() {
 // ADD: één nieuwe rij toevoegen
 // ----------------------------------------------------------
 function handleAdd(dataParam) {
-  if (!dataParam) throw new Error("Geen data voor add");
-  var item = JSON.parse(dataParam);
+  var item = validateItem_(dataParam, "add");
   var newLM = new Date().toISOString();
   item.lastModified = newLM;
   var sheet = getOrCreateSheet();
   var row = HEADERS.map(function(h) {
-    return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
+    return h === "status" ? statusNaarSheet(item[h] || "") : sanitizeCell_(item[h] || "");
   });
   sheet.appendRow(row);
   Logger.log("ADD: " + item.code + " toegevoegd");
@@ -152,8 +209,7 @@ function handleAdd(dataParam) {
 // UPDATE: bestaande rij bijwerken op basis van id
 // ----------------------------------------------------------
 function handleUpdate(dataParam) {
-  if (!dataParam) throw new Error("Geen data voor update");
-  var item = JSON.parse(dataParam);
+  var item = validateItem_(dataParam, "update");
   var sheet = getOrCreateSheet();
   var rows = sheet.getDataRange().getValues();
   var headers = rows[0];
@@ -182,24 +238,24 @@ function handleUpdate(dataParam) {
       item.lastModified = newLM;
       delete item.expectedLastModified;
       var newRow = HEADERS.map(function(h) {
-        return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
+        return h === "status" ? statusNaarSheet(item[h] || "") : sanitizeCell_(item[h] || "");
       });
       sheet.getRange(i + 1, 1, 1, HEADERS.length).setValues([newRow]);
       Logger.log("UPDATE: rij " + (i+1) + " bijgewerkt voor " + item.code);
       return { success: true, action: "update", id: item.id, lastModified: newLM };
     }
   }
-  throw new Error("ID niet gevonden voor update: " + item.id);
+  throw appError_("ID niet gevonden voor update: " + item.id);
 }
 
 // ----------------------------------------------------------
 // DELETE: rij verwijderen op basis van id
 // ----------------------------------------------------------
 function handleDelete(id) {
-  if (!id) throw new Error("Geen id voor delete");
+  if (!id) throw appError_("Geen id voor delete");
   var sheet = getOrCreateSheet();
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) throw new Error("ID niet gevonden voor delete: " + id);
+  if (lastRow < 2) throw appError_("ID niet gevonden voor delete: " + id);
   // Lees alleen de id-kolom (1 kolom) i.p.v. alle data — scheelt ~12× API-werk.
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var idCol = headers.indexOf("id");
@@ -211,7 +267,7 @@ function handleDelete(id) {
       return { success: true, action: "delete", id: id };
     }
   }
-  throw new Error("ID niet gevonden voor delete: " + id);
+  throw appError_("ID niet gevonden voor delete: " + id);
 }
 
 // ----------------------------------------------------------
@@ -221,7 +277,8 @@ function handleDelete(id) {
 function handleLog(params) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
-  var sheetName = params.sheet || "Logboek";
+  // Alleen tabbladen uit de whitelist; onbekende namen vallen terug op "Logboek".
+  var sheetName = LOG_SHEETS.hasOwnProperty(String(params.sheet || "")) ? params.sheet : "Logboek";
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
@@ -237,10 +294,10 @@ function handleLog(params) {
   var timestamp = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
   sheet.appendRow([
     timestamp,
-    params.logaction || "",
-    params.code      || "",
-    params.location  || "",
-    params.device    || ""
+    sanitizeCell_(String(params.logaction || "").slice(0, 60)),
+    sanitizeCell_(String(params.code      || "").slice(0, 60)),
+    sanitizeCell_(String(params.location  || "").slice(0, 60)),
+    sanitizeCell_(String(params.device    || "").slice(0, 120))
   ]);
   Logger.log("LOG (" + sheetName + "): " + params.logaction + " - " + params.code);
   return { success: true };
@@ -251,9 +308,10 @@ function handleLog(params) {
 // Maakt het tabblad automatisch aan als het nog niet bestaat
 // ----------------------------------------------------------
 function handleAddRoom(name, desc) {
-  if (!name) throw new Error("Geen naam opgegeven");
+  if (!name) throw appError_("Geen naam opgegeven");
   // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
-  desc = desc || "";
+  name = String(name).slice(0, 60);
+  desc = String(desc || "").slice(0, 120);
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName("Ruimtes");
   if (!sheet) {
@@ -269,7 +327,7 @@ function handleAddRoom(name, desc) {
   for (var i = 1; i < rows.length; i++) {
     if (rows[i][0] === name) return { ok: true, existing: true };
   }
-  sheet.appendRow([name, desc]);
+  sheet.appendRow([sanitizeCell_(name), sanitizeCell_(desc)]);
   Logger.log("Ruimte toegevoegd: " + name);
   return { ok: true };
 }
@@ -351,7 +409,10 @@ function handleGetBlocklist() {
 // BLOCKDEVICE: toestel toevoegen aan de blocklist
 // ----------------------------------------------------------
 function handleBlockDevice(deviceId, deviceName, blockedBy) {
-  if (!deviceId) throw new Error("Geen deviceId opgegeven");
+  if (!deviceId) throw appError_("Geen deviceId opgegeven");
+  deviceId = String(deviceId).slice(0, 40);
+  deviceName = String(deviceName || "").slice(0, 120);
+  blockedBy = String(blockedBy || "").slice(0, 120);
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName("Geblokkeerd");
   if (!sheet) {
@@ -369,7 +430,7 @@ function handleBlockDevice(deviceId, deviceName, blockedBy) {
     if (String(rows[i][0]) === String(deviceId)) return { ok: true, existing: true };
   }
   var date = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
-  sheet.appendRow([deviceId, deviceName || "", blockedBy || "", date]);
+  sheet.appendRow([sanitizeCell_(deviceId), sanitizeCell_(deviceName), sanitizeCell_(blockedBy), date]);
   Logger.log("GEBLOKKEERD: " + deviceId + " (" + deviceName + ") door " + blockedBy);
   return { ok: true };
 }
@@ -378,7 +439,7 @@ function handleBlockDevice(deviceId, deviceName, blockedBy) {
 // UNBLOCKDEVICE: toestel verwijderen uit de blocklist
 // ----------------------------------------------------------
 function handleUnblockDevice(deviceId) {
-  if (!deviceId) throw new Error("Geen deviceId opgegeven");
+  if (!deviceId) throw appError_("Geen deviceId opgegeven");
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName("Geblokkeerd");
   if (!sheet || sheet.getLastRow() <= 1) return { ok: true };
