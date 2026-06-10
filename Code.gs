@@ -294,7 +294,7 @@ function handleLog(params) {
   var timestamp = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
   sheet.appendRow([
     timestamp,
-    sanitizeCell_(String(params.logaction || "").slice(0, 60)),
+    sanitizeCell_(String(params.logaction || "").slice(0, 120)),
     sanitizeCell_(String(params.code      || "").slice(0, 60)),
     sanitizeCell_(String(params.location  || "").slice(0, 60)),
     sanitizeCell_(String(params.device    || "").slice(0, 120))
