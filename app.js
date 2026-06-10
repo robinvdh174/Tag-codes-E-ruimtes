@@ -318,7 +318,7 @@ async function processQueue() {
 function setSyncStatus(state, label) {
   const badge = document.getElementById("syncBadge");
   const lbl = document.getElementById("syncLabel");
-  if (!badge) return;
+  if (!badge || !lbl) return;
   badge.className = "sync-badge " + state;
   lbl.textContent = label;
 }
@@ -1317,7 +1317,14 @@ async function addEntry() {
   _saveNewEntry(code, loc, position, note);
 }
 
+let _isSavingNewEntry = false;
 async function _saveNewEntry(code, loc, position, note) {
+  // Re-entrancy guard: btnAdd.disabled dekt alleen kliks, niet de Enter-toets
+  // (_bindEnterSubmit). Zonder deze vlag maken twee snelle taps/Enters twee
+  // identieke kasten aan met elk een eigen server-verzoek.
+  if (_isSavingNewEntry) return;
+  _isSavingNewEntry = true;
+
   const newItem = {
     id: newId(),
     code: code,
@@ -1329,6 +1336,9 @@ async function _saveNewEntry(code, loc, position, note) {
     addedby: safeGet("ekast-device", "")
   };
 
+  const btnAdd = document.getElementById("btnAdd");
+  btnAdd.disabled = true; btnAdd.textContent = "OPSLAAN...";
+
   // Optimistic: meteen lokaal opslaan en UI updaten
   data.push(newItem);
   saveLocal();
@@ -1338,8 +1348,6 @@ async function _saveNewEntry(code, loc, position, note) {
   document.getElementById("newNote").value = "";
   refreshUI();
 
-  const btnAdd = document.getElementById("btnAdd");
-  btnAdd.disabled = true; btnAdd.textContent = "OPSLAAN...";
   setSyncStatus("syncing", "Opslaan...");
   _pendingIds.add(newItem.id);
   try {
@@ -1362,6 +1370,7 @@ async function _saveNewEntry(code, loc, position, note) {
     console.warn("addEntry offline:", e);
   } finally {
     btnAdd.disabled = false; btnAdd.textContent = "OPSLAAN";
+    _isSavingNewEntry = false;
   }
 }
 
@@ -1390,6 +1399,7 @@ function openEdit(id) {
 
 function closeModal() { document.getElementById("editModal").classList.remove("open"); }
 
+let _isSavingEdit = false;
 async function saveEdit() {
   const id = document.getElementById("editId").value;
   let idx = -1;
@@ -1403,6 +1413,12 @@ async function saveEdit() {
   let canonicalNewLoc = findRoom(newLoc);
   if (!canonicalNewLoc) { showToast("Onbekende ruimte. Kies een ruimte uit de lijst.", true); return; }
   newLoc = canonicalNewLoc;
+
+  // Re-entrancy guard: closeModal() verbergt de knop alleen, dus twee snelle
+  // taps konden allebei een update naar de server sturen (de tweede met een
+  // verouderde expectedLastModified → onterecht conflict of verloren wijziging).
+  if (_isSavingEdit) return;
+  _isSavingEdit = true;
 
   const updatedItem = Object.assign({}, data[idx], {
     code:     document.getElementById("editCode").value.trim(),
@@ -1447,6 +1463,7 @@ async function saveEdit() {
     console.warn("saveEdit offline:", e);
   } finally {
     btnSave.disabled = false; btnSave.textContent = "Opslaan";
+    _isSavingEdit = false;
   }
 }
 
@@ -1864,11 +1881,13 @@ async function verifyPin() {
   const errEl = document.getElementById("pinErr");
   if (!input || input._checking) return;
 
-  // Check of account nog geblokkeerd is
+  // Check of account nog geblokkeerd is. Start de countdown i.p.v. enkel een
+  // statische melding te tonen: die schakelt het invoerveld uit en herstelt
+  // het automatisch wanneer de lockout afloopt. Zonder dit bleef het veld
+  // actief en kon de gebruiker tijdens de lockout blijven doortypen.
   if (_pinLockUntil > Date.now()) {
-    const secLeft = Math.ceil((_pinLockUntil - Date.now()) / 1000);
-    errEl.textContent = "Geblokkeerd. Wacht " + secLeft + " seconden.";
     input.value = "";
+    if (!input.disabled) startPinLockCountdown();
     return;
   }
 
@@ -1935,12 +1954,15 @@ async function fetchAndCheckBlocklist() {
       SCRIPT_URL + "?action=getBlocklist&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
       12000
     );
-    if (resp.ok) {
-      const json = await resp.json();
-      if (Array.isArray(json)) {
-        _blocklist = json;
-        safeSet("ekast-blocklist-cache", JSON.stringify(json));
-      }
+    // Een HTTP-fout (403/500/…) is GÉÉN reden om de blocklist te negeren:
+    // gooi door naar de catch zodat we terugvallen op de gecachete lijst
+    // i.p.v. stilletjes met een lege _blocklist door te gaan (waardoor een
+    // geblokkeerd toestel alsnog binnen zou komen).
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const json = await resp.json();
+    if (Array.isArray(json)) {
+      _blocklist = json;
+      safeSet("ekast-blocklist-cache", JSON.stringify(json));
     }
   } catch(e) {
     console.warn("Blocklist ophalen mislukt:", e);
@@ -1949,8 +1971,15 @@ async function fetchAndCheckBlocklist() {
       try { const arr = JSON.parse(cached); if (Array.isArray(arr)) _blocklist = arr; } catch(_) {}
     }
   }
-  const uid = safeGet("ekast-device-id", null);
-  if (!uid) return true;
+  // Zorg dat dit toestel altijd een stabiel ID heeft, ook als 'ekast-device-id'
+  // ontbreekt. Zonder ID kan de blocklist het toestel niet identificeren —
+  // voorheen werd dan onvoorwaardelijk toegang verleend. We genereren er hier
+  // direct één zodat de check altijd tegen een echt ID gebeurt.
+  let uid = safeGet("ekast-device-id", null);
+  if (!uid) {
+    uid = newId().slice(0, 8).toUpperCase();
+    safeSet("ekast-device-id", uid);
+  }
   return !_blocklist.some(function(id) { return id.toUpperCase() === uid.toUpperCase(); });
 }
 
@@ -2128,14 +2157,22 @@ function showAdminCodePrompt() {
   if (!ov) return;
   const inp = document.getElementById("adminCodeInput");
   const err = document.getElementById("adminCodeErr");
+  const locked = _adminLockUntil > Date.now();
   if (inp) {
     inp.value = "";
-    inp.disabled = false;
+    inp.disabled = locked;
     _bindEnterSubmit(inp, verifyAdminCode);
   }
-  if (err) err.textContent = "";
+  if (err) {
+    if (locked) {
+      const secLeft = Math.ceil((_adminLockUntil - Date.now()) / 1000);
+      err.textContent = "Te veel pogingen. Wacht " + secLeft + " seconden.";
+    } else {
+      err.textContent = "";
+    }
+  }
   ov.classList.add("open");
-  setTimeout(function() { if (inp) inp.focus(); }, 150);
+  if (!locked) setTimeout(function() { if (inp) inp.focus(); }, 150);
 }
 
 function closeAdminCodePrompt() {
@@ -2143,16 +2180,47 @@ function closeAdminCodePrompt() {
   if (ov) ov.classList.remove("open");
 }
 
+// Brute-force bescherming voor de beheerderscode — zelfde aanpak als de PIN.
+// De teller leeft in localStorage zodat een refresh hem niet reset.
+const ADMIN_MAX_ATTEMPTS = 5;
+const ADMIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minuten
+let _adminAttempts = parseInt(safeGet("ekast-admin-attempts", "0"), 10) || 0;
+let _adminLockUntil = parseInt(safeGet("ekast-admin-lock", "0"), 10) || 0;
+
 async function verifyAdminCode() {
   const inp = document.getElementById("adminCodeInput");
   const err = document.getElementById("adminCodeErr");
   if (!inp || !err) return;
+
+  // Geblokkeerd? Toon resterende tijd en weiger de poging.
+  if (_adminLockUntil > Date.now()) {
+    const secLeft = Math.ceil((_adminLockUntil - Date.now()) / 1000);
+    err.textContent = "Te veel pogingen. Wacht " + secLeft + " seconden.";
+    inp.value = "";
+    return;
+  }
+
   const h = await hashPin(inp.value.trim());
   if (h === ADMIN_CODE_HASH) {
+    _adminAttempts = 0;
+    try { localStorage.removeItem("ekast-admin-attempts"); } catch(e) {}
+    try { localStorage.removeItem("ekast-admin-lock"); } catch(e) {}
     closeAdminCodePrompt();
     openDevicesModal();
   } else {
-    err.textContent = "Onjuiste code.";
+    _adminAttempts++;
+    safeSet("ekast-admin-attempts", _adminAttempts.toString());
+    if (_adminAttempts >= ADMIN_MAX_ATTEMPTS) {
+      _adminLockUntil = Date.now() + ADMIN_LOCKOUT_MS;
+      safeSet("ekast-admin-lock", _adminLockUntil.toString());
+      _adminAttempts = 0;
+      try { localStorage.removeItem("ekast-admin-attempts"); } catch(e) {}
+      err.textContent = "Te veel pogingen. Wacht 5 minuten.";
+      inp.value = "";
+      inp.disabled = true;
+      return;
+    }
+    err.textContent = "Onjuiste code. Nog " + (ADMIN_MAX_ATTEMPTS - _adminAttempts) + " pogingen.";
     inp.value = "";
     inp.focus();
   }
