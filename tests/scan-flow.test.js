@@ -61,8 +61,28 @@ global.URL = function URL(path, base) {
 global.URL.createObjectURL = function() { _objectUrlCount++; return "blob:mock"; };
 global.URL.revokeObjectURL = function() {};
 
-global.setTimeout = function(fn) { try { fn(); } catch (e) {} return 0; };
-global.clearTimeout = function() {};
+// setTimeout: korte UI-timeouts (focus e.d.) draaien direct; lange
+// timers (worker idle-release) komen in een wachtrij zodat tests het
+// verstrijken expliciet kunnen simuleren via _flushTimers().
+let _timerId = 1;
+let _pendingTimers = [];
+global.setTimeout = function(fn, ms) {
+  if (ms && ms >= 1000) {
+    const id = _timerId++;
+    _pendingTimers.push({ id: id, fn: fn });
+    return id;
+  }
+  try { fn(); } catch (e) {}
+  return 0;
+};
+global.clearTimeout = function(id) {
+  _pendingTimers = _pendingTimers.filter(function(t) { return t.id !== id; });
+};
+function _flushTimers() {
+  const timers = _pendingTimers.slice();
+  _pendingTimers = [];
+  timers.forEach(function(t) { try { t.fn(); } catch (e) {} });
+}
 global.console = { warn: function() {}, log: console.log };
 // Mock fetch zodat _preflightTesseract gewoon doorloopt (response.ok=true)
 global.fetch = function() { return Promise.resolve({ ok: true, status: 200 }); };
@@ -82,6 +102,8 @@ global._parseBonText = function() { return { tagE: "MOCK", tagM: "", machine: ""
 // blob URL — dat veroorzaakte de iOS Safari "Failed to fetch" bug).
 let _tesseractCalled = false;
 let _recognizeArg = null;
+let _createWorkerCalls = 0;
+let _terminatedWorkers = 0;
 function _makeWorkerMock() {
   return {
     recognize: function(arg) {
@@ -89,8 +111,12 @@ function _makeWorkerMock() {
       _recognizeArg = arg;
       return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
     },
-    terminate: function() { return Promise.resolve(); }
+    terminate: function() { _terminatedWorkers++; return Promise.resolve(); }
   };
+}
+function _standardCreateWorker() {
+  _createWorkerCalls++;
+  return Promise.resolve(_makeWorkerMock());
 }
 global.Tesseract = {
   // Backwards-compat: oudere code-pad met Tesseract.recognize
@@ -100,9 +126,7 @@ global.Tesseract = {
     return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
   },
   // Nieuwe v5 API
-  createWorker: function() {
-    return Promise.resolve(_makeWorkerMock());
-  }
+  createWorker: _standardCreateWorker
 };
 
 // _loadTesseract zelf test ik niet hier (vereist DOM). Ik mock 'em.
@@ -126,12 +150,20 @@ function mockFile(opts) {
   };
 }
 
-function reset() {
+async function reset() {
   _scanErrors = [];
   _shownResults = [];
   _tesseractCalled = false;
   _recognizeArg = null;
   _objectUrlCount = 0;
+  // Gecachte worker uit een vorige test opruimen en de async terminate
+  // laten uitlopen vóór we de tellers nullen — anders telt de opruiming
+  // van de vórige test mee in de huidige.
+  _releaseScanWorker();
+  await new Promise(function(r) { setImmediate(r); });
+  _pendingTimers = [];
+  _createWorkerCalls = 0;
+  _terminatedWorkers = 0;
 }
 
 // ====================================================================
@@ -140,7 +172,7 @@ function reset() {
 
 // ---------- 1. Geldige image gaat door naar OCR ----------
 async function test1() {
-  reset();
+  await reset();
   const f = mockFile({ type: "image/jpeg", size: 2 * 1024 * 1024 });
   await onScanFileChosen({ target: { files: [f] } });
   eq(_tesseractCalled, true, "Geldige image: OCR wordt aangeroepen");
@@ -155,7 +187,7 @@ async function test1() {
 
 // ---------- 2. PDF afgewezen voor OCR-call ----------
 async function test2() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [mockFile({ type: "application/pdf" })] } });
   eq(_tesseractCalled, false, "PDF: OCR wordt NIET aangeroepen");
   eq(_scanErrors.length, 1, "PDF: error getoond");
@@ -165,7 +197,7 @@ async function test2() {
 
 // ---------- 3. Bestand zonder type afgewezen ----------
 async function test3() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [mockFile({ type: "" })] } });
   eq(_tesseractCalled, false, "Geen type: OCR niet aangeroepen");
   eq(_scanErrors.length, 1, "Geen type: error");
@@ -173,7 +205,7 @@ async function test3() {
 
 // ---------- 4. Te grote foto afgewezen ----------
 async function test4() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 20 * 1024 * 1024 })] } });
   eq(_tesseractCalled, false, "20MB: OCR niet aangeroepen");
   eq(_scanErrors.length, 1, "20MB: error");
@@ -183,7 +215,7 @@ async function test4() {
 
 // ---------- 5. Op de grens (15MB) wordt nog geaccepteerd ----------
 async function test5() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 15 * 1024 * 1024 })] } });
   eq(_tesseractCalled, true, "15MB precies: OCR wordt aangeroepen");
   eq(_scanErrors.length, 0, "15MB: geen errors");
@@ -191,7 +223,7 @@ async function test5() {
 
 // ---------- 6. Just-over de grens (15MB + 1 byte) wordt afgewezen ----------
 async function test6() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [mockFile({ type: "image/jpeg", size: 15 * 1024 * 1024 + 1 })] } });
   eq(_tesseractCalled, false, "15MB+1: afgewezen");
   eq(_scanErrors.length, 1, "15MB+1: error");
@@ -199,7 +231,7 @@ async function test6() {
 
 // ---------- 7. Geen file: stilletjes returnen ----------
 async function test7() {
-  reset();
+  await reset();
   await onScanFileChosen({ target: { files: [] } });
   eq(_tesseractCalled, false, "Geen file: niets gebeurt");
   eq(_scanErrors.length, 0, "Geen file: geen error");
@@ -210,7 +242,7 @@ async function test7() {
 
 // ---------- 8. _scanToken-cancellation: token mismatch onderdrukt resultaat ----------
 async function test8() {
-  reset();
+  await reset();
   // We starten een scan en hogen handmatig _scanToken op tijdens OCR
   // (simuleert closeScan tijdens lopende worker.recognize). Houder-
   // object om de resolver te bereiken na await-gap.
@@ -239,6 +271,157 @@ async function test8() {
   eq(_shownResults.length, 0, "Token-mismatch: resultaat NIET getoond");
 }
 
+// ---------- 9. _scanTargetDims: schaalberekening ----------
+function test9() {
+  let d = _scanTargetDims(4000, 3000);
+  eq(d.w, 2000, "4000x3000 landscape: breedte naar 2000");
+  eq(d.h, 1500, "4000x3000 landscape: hoogte naar 1500");
+  d = _scanTargetDims(3000, 4000);
+  eq(d.w, 1500, "3000x4000 portret: breedte naar 1500");
+  eq(d.h, 2000, "3000x4000 portret: hoogte naar 2000");
+  eq(_scanTargetDims(1600, 1200), null, "Kleine foto: geen schaling nodig");
+  eq(_scanTargetDims(2000, 2000), null, "Exact op de grens: geen schaling");
+  eq(_scanTargetDims(0, 0), null, "0x0: null");
+  eq(_scanTargetDims(undefined, undefined), null, "undefined: null");
+}
+
+// Helper: installeer canvas + createImageBitmap mocks voor de
+// _prepareScanImage tests. Geeft een restore-functie terug.
+function _mockDecodePipeline(bitmapImpl, fakeBlob) {
+  const state = { canvas: null, drawArgs: null };
+  global.createImageBitmap = bitmapImpl;
+  const origCreateElement = global.document.createElement;
+  global.document.createElement = function(tag) {
+    if (tag === "canvas") {
+      state.canvas = {
+        width: 0, height: 0,
+        getContext: function() {
+          return { drawImage: function(src, x, y, w, h) { state.drawArgs = [x, y, w, h]; } };
+        },
+        toBlob: function(cb) { cb(fakeBlob); }
+      };
+      return state.canvas;
+    }
+    return origCreateElement(tag);
+  };
+  state.restore = function() {
+    delete global.createImageBitmap;
+    global.document.createElement = origCreateElement;
+  };
+  return state;
+}
+
+// ---------- 10. _prepareScanImage: grote foto wordt verkleind tot blob ----------
+async function test10() {
+  await reset();
+  const fakeBlob = { size: 12345, type: "image/jpeg" };
+  let closed = false;
+  const pipe = _mockDecodePipeline(function() {
+    return Promise.resolve({ width: 4000, height: 3000, close: function() { closed = true; } });
+  }, fakeBlob);
+  const out = await _prepareScanImage(mockFile({ size: 8 * 1024 * 1024 }));
+  eq(out === fakeBlob, true, "Grote foto: verkleinde blob teruggegeven");
+  eq(pipe.drawArgs && pipe.drawArgs[2], 2000, "Grote foto: getekend op 2000px breed");
+  eq(pipe.drawArgs && pipe.drawArgs[3], 1500, "Grote foto: getekend op 1500px hoog");
+  eq(closed, true, "Grote foto: ImageBitmap.close() aangeroepen (geheugen)");
+  pipe.restore();
+}
+
+// ---------- 11. _prepareScanImage: options-bag niet ondersteund → kale retry ----------
+async function test11() {
+  await reset();
+  const fakeBlob = { size: 999, type: "image/jpeg" };
+  const calls = [];
+  const pipe = _mockDecodePipeline(function(f, opts) {
+    calls.push(opts);
+    if (opts) return Promise.reject(new Error("options niet ondersteund"));
+    return Promise.resolve({ width: 1000, height: 800, close: function() {} });
+  }, fakeBlob);
+  const out = await _prepareScanImage(mockFile({}));
+  eq(calls.length, 2, "Options-fout: createImageBitmap kaal opnieuw geprobeerd");
+  eq(out === fakeBlob, true, "Options-fout: alsnog her-encodeerde blob terug");
+  // Kleine foto wordt niet geschaald maar wél her-encodeerd (EXIF/HEIC)
+  eq(pipe.drawArgs && pipe.drawArgs[2], 1000, "Kleine foto: originele breedte behouden");
+  pipe.restore();
+}
+
+// ---------- 12. _prepareScanImage: geen decode-API's → origineel File terug ----------
+async function test12() {
+  await reset();
+  // In Node bestaan createImageBitmap en Image niet — fallback-pad.
+  const f = mockFile({});
+  const out = await _prepareScanImage(f);
+  eq(out === f, true, "Geen decode-API's: origineel File-object terug");
+}
+
+// ---------- 13. End-to-end: recognize() krijgt de voorbereide blob ----------
+async function test13() {
+  await reset();
+  // test8 heeft Tesseract.createWorker overschreven met een pending mock;
+  // herstel de standaard worker-mock.
+  global.Tesseract.createWorker = _standardCreateWorker;
+  const fakeBlob = { size: 555, type: "image/jpeg" };
+  const pipe = _mockDecodePipeline(function() {
+    return Promise.resolve({ width: 4000, height: 3000, close: function() {} });
+  }, fakeBlob);
+  await onScanFileChosen({ target: { files: [mockFile({ size: 5 * 1024 * 1024 })] } });
+  eq(_tesseractCalled, true, "E2E met voorbewerking: OCR aangeroepen");
+  eq(_recognizeArg === fakeBlob, true, "E2E: recognize() krijgt de verkleinde blob");
+  eq(_shownResults.length, 1, "E2E: resultaat getoond");
+  pipe.restore();
+}
+
+// ---------- 14. Worker wordt hergebruikt bij opeenvolgende scans ----------
+async function test14() {
+  await reset();
+  global.Tesseract.createWorker = _standardCreateWorker;
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  eq(_createWorkerCalls, 1, "Twee scans: createWorker maar één keer aangeroepen");
+  eq(_shownResults.length, 2, "Twee scans: twee resultaten getoond");
+  eq(_terminatedWorkers, 0, "Worker niet getermineerd tussen scans");
+  ok(_pendingTimers.length >= 1, "Idle-release timer staat gepland na de scan");
+}
+
+// ---------- 15. Idle-timer ruimt de worker op; volgende scan start vers ----------
+async function test15() {
+  await reset();
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  eq(_createWorkerCalls, 1, "Eerste scan: worker gemaakt");
+  _flushTimers(); // simuleer 2 minuten zonder scans
+  await new Promise(function(r) { setImmediate(r); }); // terminate loopt via .then
+  eq(_terminatedWorkers, 1, "Idle verstreken: worker getermineerd");
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  eq(_createWorkerCalls, 2, "Na idle-release: nieuwe worker gemaakt");
+  eq(_shownResults.length, 2, "Beide scans toonden resultaat");
+}
+
+// ---------- 16. Recognize-fout: kapotte worker niet hergebruiken ----------
+async function test16() {
+  await reset();
+  let failOnce = true;
+  global.Tesseract.createWorker = function() {
+    _createWorkerCalls++;
+    return Promise.resolve({
+      recognize: function(arg) {
+        if (failOnce) { failOnce = false; return Promise.reject(new Error("worker kapot")); }
+        _tesseractCalled = true;
+        _recognizeArg = arg;
+        return Promise.resolve({ data: { text: "Tag-code E: MOCK" } });
+      },
+      terminate: function() { _terminatedWorkers++; return Promise.resolve(); }
+    });
+  };
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  eq(_scanErrors.length, 1, "Recognize-fout: error getoond");
+  await new Promise(function(r) { setImmediate(r); }); // terminate loopt via .then
+  eq(_terminatedWorkers, 1, "Kapotte worker is getermineerd");
+  await onScanFileChosen({ target: { files: [mockFile({})] } });
+  eq(_createWorkerCalls, 2, "Na fout: verse worker voor de volgende scan");
+  eq(_shownResults.length, 1, "Tweede scan slaagt gewoon");
+  global.Tesseract.createWorker = _standardCreateWorker;
+}
+
 // Run alle tests sequentieel
 (async function() {
   await test1();
@@ -249,6 +432,14 @@ async function test8() {
   await test6();
   await test7();
   await test8();
+  test9();
+  await test10();
+  await test11();
+  await test12();
+  await test13();
+  await test14();
+  await test15();
+  await test16();
   console.log("Scan-flow tests voltooid.");
   summary();
 })();

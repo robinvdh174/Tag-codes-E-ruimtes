@@ -2341,10 +2341,168 @@ function _setScanProgress(msg) {
 // oudere toestellen.
 const _SCAN_MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 
+// Maximale langste zijde (px) van de foto die naar Tesseract gaat.
+// Een werkbon is een A4-document; ~2000px is ruim voldoende voor OCR
+// en is een factor 4-6 minder pixels dan een onbewerkte 12MP-telefoonfoto
+// — dat scheelt seconden analysetijd én tientallen MB werkgeheugen.
+const _SCAN_MAX_DIM = 2000;
+const _SCAN_JPEG_QUALITY = 0.9;
+
+// Berekent de doelafmetingen voor het verkleinen van een foto.
+// Geeft null terug als schalen niet nodig is (al klein genoeg) of als
+// de invoer ongeldig is.
+function _scanTargetDims(w, h) {
+  if (!w || !h || w < 0 || h < 0) return null;
+  const longest = Math.max(w, h);
+  if (longest <= _SCAN_MAX_DIM) return null;
+  const scale = _SCAN_MAX_DIM / longest;
+  return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+
+// Bereidt de gekozen foto voor op OCR. Dit lost drie problemen tegelijk op:
+// 1. EXIF-rotatie: Tesseract negeert de EXIF-orientation-tag, waardoor
+//    portretfoto's intern zijwaarts liggen en de OCR vrijwel niets leest.
+//    De browser-decoder past de rotatie wél toe; her-encoderen "bakt"
+//    die in.
+// 2. Grootte: verkleinen naar max _SCAN_MAX_DIM px maakt de analyse
+//    veel sneller en voorkomt OOM op oudere toestellen.
+// 3. Formaat: HEIC-foto's (iPhone-bibliotheek) kan Tesseract niet
+//    decoderen; de browser vaak wel — na her-encoderen is het JPEG.
+// Faalt er íéts (oude browser, exotisch formaat), dan geven we het
+// originele File-object terug zodat het oude gedrag blijft werken.
+async function _prepareScanImage(file) {
+  try {
+    let src = null;
+    let w = 0, h = 0;
+    let cleanup = function() {};
+
+    if (typeof createImageBitmap === "function") {
+      try {
+        // "from-image" expliciet meegeven: oudere Chrome-versies passen
+        // EXIF-rotatie anders niet toe bij createImageBitmap.
+        src = await createImageBitmap(file, { imageOrientation: "from-image" });
+      } catch (e) {
+        // Sommige browsers ondersteunen de options-bag niet — retry kaal.
+        try { src = await createImageBitmap(file); } catch (e2) { src = null; }
+      }
+      if (src) {
+        w = src.width; h = src.height;
+        cleanup = function() { try { src.close(); } catch (e) {} };
+      }
+    }
+
+    if (!src && typeof Image !== "undefined" &&
+        typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+      // Fallback voor browsers zonder createImageBitmap. De blob-URL
+      // blijft op de main thread (een <img> hier is veilig — de iOS
+      // Safari-bug betrof blob-URLs die in de wórker gefetcht werden).
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        if (img.decode) {
+          await img.decode();
+        } else {
+          await new Promise(function(res, rej) { img.onload = res; img.onerror = rej; });
+        }
+        src = img;
+        w = img.naturalWidth; h = img.naturalHeight;
+        cleanup = function() { try { URL.revokeObjectURL(url); } catch (e) {} };
+      } catch (e) {
+        try { URL.revokeObjectURL(url); } catch (e2) {}
+        return file;
+      }
+    }
+
+    if (!src || !w || !h) { cleanup(); return file; }
+
+    const dims = _scanTargetDims(w, h) || { w: w, h: h };
+    const canvas = document.createElement("canvas");
+    canvas.width = dims.w;
+    canvas.height = dims.h;
+    const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+    if (!ctx) { cleanup(); return file; }
+    ctx.drawImage(src, 0, 0, dims.w, dims.h);
+    cleanup();
+
+    const blob = await new Promise(function(resolve) {
+      if (canvas.toBlob) {
+        canvas.toBlob(resolve, "image/jpeg", _SCAN_JPEG_QUALITY);
+      } else {
+        resolve(null);
+      }
+    });
+    // Canvas-buffer expliciet vrijgeven — iOS houdt canvassen anders
+    // lang in het geheugen vast.
+    canvas.width = 1; canvas.height = 1;
+    return (blob && blob.size > 0) ? blob : file;
+  } catch (e) {
+    return file;
+  }
+}
+
 // Token dat ophoogt bij elke nieuwe scan. Late OCR-callbacks van een
 // geannuleerde scan negeren we door het token te vergelijken — voorkomt
 // dat een afgesloten scan-modal alsnog resultaten of progress toont.
 let _scanToken = 0;
+
+// ── Worker-hergebruik ───────────────────────────────────────
+// Het opstarten van de Tesseract-worker (WASM instantiëren + taaldata
+// laden) kost enkele seconden. Wie meerdere bonnen kort na elkaar scant
+// of na een mislezing opnieuw probeert, betaalde die opstartkost telkens
+// opnieuw. Daarom cachen we de worker en ruimen we hem pas op na een
+// periode zonder scans — zo blijft het geheugen (~50-100 MB) niet
+// onnodig lang bezet op oudere toestellen.
+const _SCAN_WORKER_IDLE_MS = 2 * 60 * 1000;
+let _scanWorkerPromise = null;
+let _scanWorkerIdleTimer = null;
+
+// Indirectie voor de progress-logger: de logger wordt eenmalig aan de
+// worker gebonden bij createWorker, maar moet de voortgang van de
+// HUIDIGE scan rapporteren. Elke scan zet deze hook opnieuw; de hook
+// checkt zelf het scan-token zodat een geannuleerde scan stil blijft.
+let _scanProgressHook = null;
+
+function _getScanWorker(baseUrl) {
+  if (_scanWorkerPromise) return _scanWorkerPromise;
+  const p = Tesseract.createWorker("eng", 1, {
+    workerPath: baseUrl + "/worker.min.js",
+    corePath: baseUrl,
+    langPath: baseUrl,
+    workerBlobURL: false,
+    logger: function(prog) {
+      if (_scanProgressHook) _scanProgressHook(prog);
+    }
+  });
+  _scanWorkerPromise = p;
+  // Een mislukte start niet cachen — een volgende poging moet vers
+  // kunnen beginnen. De rejection zelf bereikt de aanroeper via await.
+  p.catch(function() { if (_scanWorkerPromise === p) _scanWorkerPromise = null; });
+  return p;
+}
+
+// Ruimt de gecachte worker op (fire-and-forget; terminate is async).
+function _releaseScanWorker() {
+  if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+  const p = _scanWorkerPromise;
+  _scanWorkerPromise = null;
+  if (p) {
+    p.then(function(w) {
+      if (w && typeof w.terminate === "function") return w.terminate();
+    }).catch(function() {});
+  }
+}
+
+// Plant het opruimen van de worker na _SCAN_WORKER_IDLE_MS zonder scans.
+// Elke nieuwe scan annuleert de lopende timer en plant na afloop opnieuw.
+function _scheduleScanWorkerRelease() {
+  if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+  if (!_scanWorkerPromise) return;
+  _scanWorkerIdleTimer = setTimeout(function() {
+    _scanWorkerIdleTimer = null;
+    _releaseScanWorker();
+  }, _SCAN_WORKER_IDLE_MS);
+}
 
 // Pre-flight check: probeer elk Tesseract-asset op te halen voordat we
 // Tesseract.recognize starten. Tesseract's interne worker geeft bij een
@@ -2424,6 +2582,12 @@ async function onScanFileChosen(ev) {
   const myToken = ++_scanToken;
   const isAlive = function() { return _scanToken === myToken; };
 
+  // Start het decoderen/verkleinen van de foto alvast, parallel aan het
+  // laden van de scan-bibliotheek — scheelt seconden op grote foto's.
+  // _prepareScanImage rejected nooit: bij elke fout komt het originele
+  // File-object terug.
+  const preparedPromise = _prepareScanImage(file);
+
   const init = document.getElementById("scanInitial");
   const proc = document.getElementById("scanProcessing");
   const res = document.getElementById("scanResult");
@@ -2432,59 +2596,75 @@ async function onScanFileChosen(ev) {
   if (proc) proc.style.display = "";
   _setScanProgress("Scan-bibliotheek laden…");
 
-  let _tWorker = null;
   let _stage = "init";
   try {
     _stage = "load-script";
     await _loadTesseract();
     if (!isAlive()) return; // modal ondertussen gesloten
 
-    // Pre-flight check: probeer elk Tesseract-asset op te halen via
-    // HEAD-request. Zo zien we direct welke specifieke URL faalt
-    // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
-    _stage = "preflight";
-    _setScanProgress("Bestanden controleren…");
     // baseUrl wordt zonder trailing slash gebruikt voor Tesseract-paden
     // omdat Tesseract intern zelf '/' toevoegt — dubbel-slash kan op
     // sommige servers (en strict CSP-paden) onverwacht falen.
     const baseUrlWithSlash = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
     const baseUrl = baseUrlWithSlash.replace(/\/$/, "");
-    await _preflightTesseract(baseUrlWithSlash);
-    if (!isAlive()) return;
+
+    // Nieuwe scan: geplande idle-opruiming annuleren — de worker wordt
+    // zo meteen weer gebruikt.
+    if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+
+    if (!_scanWorkerPromise) {
+      // Pre-flight check: probeer elk Tesseract-asset op te halen vóór
+      // de worker start. Zo zien we direct welke specifieke URL faalt
+      // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
+      // Alleen nodig bij een verse worker — bij hergebruik zijn de
+      // assets al geladen en besparen we deze fetches per vervolg-scan.
+      _stage = "preflight";
+      _setScanProgress("Bestanden controleren…");
+      await _preflightTesseract(baseUrlWithSlash);
+      if (!isAlive()) return;
+    }
 
     // Worker expliciet maken via createWorker (i.p.v. recognize-shorthand)
     // zodat we een falende stap exact kunnen pinpointen en opruimen.
+    // _getScanWorker hergebruikt een eerder gestarte worker.
     _stage = "create-worker";
     _setScanProgress("Worker starten…");
-    _tWorker = await Tesseract.createWorker("eng", 1, {
-      workerPath: baseUrl + "/worker.min.js",
-      corePath: baseUrl,
-      langPath: baseUrl,
-      workerBlobURL: false,
-      logger: function(p) {
-        if (!isAlive()) return;
-        if (p && p.status === "recognizing text" && typeof p.progress === "number") {
-          _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
-        } else if (p && p.status) {
-          _setScanProgress(p.status);
-        }
+    _scanProgressHook = function(p) {
+      if (!isAlive()) return;
+      if (p && p.status === "recognizing text" && typeof p.progress === "number") {
+        _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
+      } else if (p && p.status) {
+        _setScanProgress(p.status);
       }
-    });
+    };
+    const worker = await _getScanWorker(baseUrl);
+    if (!isAlive()) return;
+
+    _stage = "prepare-image";
+    _setScanProgress("Foto voorbereiden…");
+    const ocrInput = await preparedPromise;
     if (!isAlive()) return;
 
     _stage = "recognize";
     _setScanProgress("Bon analyseren…");
-    // Het File-object wordt rechtstreeks doorgegeven aan recognize().
+    // Het File/Blob-object wordt rechtstreeks doorgegeven aan recognize().
     // Tesseract.js v5 ondersteunt File/Blob via structured cloning naar
-    // de worker. We vermijden bewust URL.createObjectURL: blob-URLs die
-    // op de main thread worden aangemaakt zijn op iOS Safari niet altijd
-    // bereikbaar vanuit web workers, waardoor recognize() faalt met
-    // "TypeError: Failed to fetch" in tesseract.min.js.
-    const result = await _tWorker.recognize(file);
+    // de worker. We vermijden bewust URL.createObjectURL richting de
+    // worker: blob-URLs die op de main thread worden aangemaakt zijn op
+    // iOS Safari niet altijd bereikbaar vanuit web workers, waardoor
+    // recognize() faalt met "TypeError: Failed to fetch" in tesseract.min.js.
+    const result = await worker.recognize(ocrInput);
     if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
   } catch (err) {
+    // Een worker die faalde bij het starten of tijdens recognize kan in
+    // een kapotte staat achterblijven — niet hergebruiken. Alleen als
+    // deze scan nog "leeft": een geannuleerde scan mag de worker van een
+    // eventueel al gestarte nieuwe scan niet onder diens voeten weghalen.
+    if (isAlive() && (_stage === "create-worker" || _stage === "recognize")) {
+      _releaseScanWorker();
+    }
     if (!isAlive()) return;
     console.warn("Scan mislukt in stage '" + _stage + "':", err);
     let msg = err && err.message ? err.message : "Onbekende fout";
@@ -2513,10 +2693,10 @@ async function onScanFileChosen(ev) {
     msg += "\n\n" + detail;
     _showScanError(msg);
   } finally {
-    // Worker opruimen om geheugenlek te voorkomen, ook bij fout.
-    if (_tWorker && typeof _tWorker.terminate === "function") {
-      try { await _tWorker.terminate(); } catch (e) {}
-    }
+    // Worker niet meteen termineren maar idle-opruiming plannen: een
+    // snelle vervolg-scan (volgende bon, opnieuw proberen) slaat dan de
+    // opstartkost van enkele seconden over.
+    _scheduleScanWorkerRelease();
     const inp = document.getElementById("scanFileInput");
     if (inp) inp.value = "";
   }
