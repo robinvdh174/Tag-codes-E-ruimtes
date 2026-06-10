@@ -2,9 +2,11 @@
 // Na het deployen van Code.gs kopieer je de URL hier
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx95mvBsmpMxJn7c0cLDL_V63x7Bv9T3XQW_vfL0K2wRlSfxm4476rJ0qZDrFOZ0nF9kg/exec";
 
-// 🔑 API TOKEN — voeg dit toe aan je Apps Script om ongeautoriseerde toegang te blokkeren
-// Stel in je Apps Script in: if (e.parameter.token !== "JOUW_TOKEN") return ...
-// Wijzig de waarde hieronder en zorg dat je Apps Script dezelfde waarde controleert.
+// 🔑 API TOKEN — moet overeenkomen met de token die Code.gs controleert.
+// Roteren: zet in Apps Script (Projectinstellingen → Scripteigenschappen)
+// de sleutel "API_TOKEN" op de nieuwe waarde en pas deze constante aan.
+// Let op: deze waarde is zichtbaar voor iedereen die de app kan openen —
+// het is een drempel tegen toevallige toegang, geen echte authenticatie.
 const API_TOKEN = "ekast-2025";
 
 // 🔒 GEDEELDE PIN — SHA-256 hash van de PIN
@@ -326,11 +328,11 @@ function setSyncStatus(state, label) {
 // ============================================================
 // SYNC: LEZEN — haalt alle data op uit Sheets
 // ============================================================
-async function fetchWithTimeout(url, ms) {
+async function fetchWithTimeout(url, ms, opts) {
   const ctrl = new AbortController();
   const timer = setTimeout(function() { ctrl.abort(); }, ms);
   try {
-    const resp = await fetch(url, { signal: ctrl.signal });
+    const resp = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {}));
     return resp;
   } finally {
     clearTimeout(timer);
@@ -433,14 +435,40 @@ function deduplicateById(arr) {
 }
 
 // ============================================================
-// DELTA SYNC — individuele acties naar Sheets sturen via GET
-// Geen grote payload, geen CORS-problemen, altijd betrouwbaar
+// DELTA SYNC — individuele acties naar Sheets sturen
+// Schrijfacties gaan via POST (text/plain = geen CORS-preflight):
+// GET-requests kunnen door proxies/prefetchers herhaald worden en
+// lopen tegen URL-lengtelimieten aan bij lange notitievelden.
+// Antwoordt een oude server-deployment met "POST disabled", dan
+// vallen we voor de rest van de sessie terug op het oude GET-pad.
 // ============================================================
+let _postSupported = true;
+
 async function sheetAction(params) {
   if (!SCRIPT_URL) return false;
   // Blokkeer auto-sync terwijl we schrijven, anders overschrijft die onze nieuwe data
   _isWriting = true;
   try {
+    if (_postSupported) {
+      const body = JSON.stringify(Object.assign({}, params, { token: API_TOKEN }));
+      const resp = await fetchWithTimeout(SCRIPT_URL, 25000, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: body
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const json = await resp.json();
+      if (json && json.error === "POST disabled") {
+        // Oude Code.gs-deployment zonder POST-support. Alleen bij dít
+        // expliciete antwoord terugvallen — bij netwerkfouten NIET, anders
+        // zou een al uitgevoerde POST via GET dubbel uitgevoerd worden.
+        _postSupported = false;
+        console.warn("Server-deployment ondersteunt geen POST — terugvallen op GET. Herdeploy Code.gs.");
+      } else {
+        if (json.error) throw new Error(json.error);
+        return json;
+      }
+    }
     const url = SCRIPT_URL + "?" + Object.keys(params).map(function(k) {
       return k + "=" + (k === "data" ? encodeURIComponent(params[k]) : encodeURIComponent(String(params[k])));
     }).join("&") + "&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now();
@@ -1801,8 +1829,9 @@ function showPinSetup() {
     "<div class='form-group'><label>PIN</label>" +
     "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='off'></div>" +
     "<div class='pin-error' id='pinErr'></div>" +
-    "<button class='btn-primary' onclick='savePin()'>Bevestigen</button>" +
+    "<button class='btn-primary' type='button' id='setupPinBtn'>Bevestigen</button>" +
     "</div>";
+  document.getElementById("setupPinBtn").addEventListener("click", savePin);
   ov.classList.add("open");
 }
 
@@ -1829,8 +1858,9 @@ function showPinEnter() {
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
     "<div class='pin-sub'>" + esc(device) + "<br>Voer je PIN in.</div>" +
-    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='new-password' oninput='verifyPin()'>" +
+    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='new-password'>" +
     "<div class='pin-error' id='pinErr'></div>";
+  document.getElementById("pinInput").addEventListener("input", verifyPin);
   ov.classList.add("open");
   // Als de pagina herladen is tijdens een lockout, toon direct de countdown
   // in plaats van pas bij 4 ingetypte cijfers.
@@ -3300,9 +3330,124 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   window.addEventListener('scroll', onScroll, { passive: true });
 })();
 
+// ============================================================
+// EVENT-WIRING — alle knoppen/overlays uit index.html.
+// Geen inline onclick-attributen meer: daardoor kan de CSP
+// 'unsafe-inline' voor scripts weigeren (XSS-verharding).
+// ============================================================
+(function wireStaticEvents() {
+  function on(id, evt, fn) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(evt, fn);
+    else console.warn("wireStaticEvents: #" + id + " niet gevonden");
+  }
+  // Sluit wanneer er buiten de kaart geklikt wordt (vervangt het oude
+  // stopPropagation-op-de-kaart-patroon).
+  function closeOnOutsideClick(id, cardSelector, closeFn) {
+    on(id, "click", function(e) {
+      if (!e.target.closest(cardSelector)) closeFn();
+    });
+  }
+
+  on("syncBadge", "click", manualSync);
+  ["search", "list", "status", "bonnen", "add"].forEach(function(name) {
+    on("tbtn-" + name, "click", function() { switchTab(name); });
+  });
+
+  on("searchInput", "input", function(e) { doSearch(e.target.value); });
+  on("btnScanCam", "click", openScan);
+
+  on("btnLabelsClear", "click", werkbonClearAll);
+  on("btnAfwerken", "click", openAfwerkenModal);
+
+  on("btnRoomAdd", "click", openAddRoomModal);
+  on("btnRoomDrop1", "click", function() { toggleRoomDropdown("newLocation", "roomDrop1"); });
+  on("btnAdd", "click", addEntry);
+
+  closeOnOutsideClick("werkbonModal", ".modal", closeAfwerkenModal);
+  on("wbCancelBtn", "click", closeAfwerkenModal);
+  on("wbFinalizeBtn", "click", werkbonFinalize);
+
+  closeOnOutsideClick("scanModal", ".modal", closeScan);
+  on("scanFileInput", "change", onScanFileChosen);
+  on("btnScanFoto", "click", function() { document.getElementById("scanFileInput").click(); });
+  on("btnScanClose", "click", closeScan);
+
+  closeOnOutsideClick("editModal", ".modal", closeModal);
+  on("btnRoomDrop2", "click", function() { toggleRoomDropdown("editLocation", "roomDrop2"); });
+  on("btnEditCancel", "click", closeModal);
+  on("btnSaveEdit", "click", saveEdit);
+
+  on("adminCodeCancelBtn", "click", closeAdminCodePrompt);
+  on("adminCodeOkBtn", "click", verifyAdminCode);
+
+  closeOnOutsideClick("devicesModal", ".modal", closeDevicesModal);
+  on("devicesCloseBtn", "click", closeDevicesModal);
+
+  closeOnOutsideClick("addRoomModal", ".modal", closeAddRoomModal);
+  on("addRoomCancelBtn", "click", closeAddRoomModal);
+  on("addRoomSaveBtn", "click", saveNewRoom);
+
+  closeOnOutsideClick("confirmOverlay", ".status-popup-card", confirmNee);
+  on("confirmJaBtn", "click", confirmJa);
+  on("confirmNeeBtn", "click", confirmNee);
+
+  closeOnOutsideClick("statusPopup", ".status-popup-card", closeStatusKeuze);
+  on("statusNaamCancelBtn", "click", sluitStatusNaamModal);
+  on("statusNaamOkBtn", "click", bevestigStatusNaam);
+
+  closeOnOutsideClick("infoPopupOverlay", ".info-popup", closeInfoPopup);
+  on("infoPopupCloseBtn", "click", closeInfoPopup);
+
+  on("conflictMineBtn", "click", function() { resolveConflict("mine"); });
+  on("conflictServerBtn", "click", function() { resolveConflict("server"); });
+})();
+
 // Service Worker registreren voor offline ondersteuning
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(function(e) {
+  // Banner "Nieuwe versie beschikbaar" — pas herladen als de gebruiker dat
+  // wil, nooit automatisch midden in een invul-sessie.
+  function showUpdateBanner(onConfirm) {
+    if (document.getElementById("updateBanner")) return;
+    const banner = document.createElement("div");
+    banner.id = "updateBanner";
+    banner.className = "update-banner";
+    banner.setAttribute("role", "status");
+    const txt = document.createElement("span");
+    txt.textContent = "Nieuwe versie beschikbaar";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Vernieuwen";
+    btn.addEventListener("click", function() {
+      btn.disabled = true;
+      btn.textContent = "Bezig…";
+      onConfirm();
+    });
+    banner.appendChild(txt);
+    banner.appendChild(btn);
+    document.body.appendChild(banner);
+  }
+
+  function watchForWaitingSw(reg) {
+    function promptIfWaiting() {
+      if (!reg.waiting || !navigator.serviceWorker.controller) return;
+      showUpdateBanner(function() {
+        reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      });
+    }
+    promptIfWaiting();
+    reg.addEventListener("updatefound", function() {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener("statechange", function() {
+        if (sw.state === "installed") promptIfWaiting();
+      });
+    });
+  }
+
+  navigator.serviceWorker.register("./sw.js").then(function(reg) {
+    watchForWaitingSw(reg);
+  }).catch(function(e) {
     console.warn("Service Worker registratie mislukt:", e);
   });
 
@@ -3312,8 +3457,8 @@ if ("serviceWorker" in navigator) {
     try { reg.update(); } catch (e) {}
   });
 
-  // Wanneer een nieuwe SW de controle overneemt (skipWaiting + claim),
-  // herladen we automatisch zodat de page de nieuwe app.js krijgt.
+  // Wanneer de nieuwe SW de controle overneemt (na bevestiging via de
+  // banner) herladen we zodat de page de nieuwe app.js krijgt.
   // Eén keer per pageload — anders krijg je een refresh-loop.
   let _swReloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", function() {

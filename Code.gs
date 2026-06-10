@@ -27,36 +27,85 @@ function statusVanSheet(val) {
   return "";
 }
 
-function doGet(e) {
+// Token bij voorkeur uit Script Properties (Project-instellingen →
+// Scripteigenschappen → sleutel "API_TOKEN"). Zo kun je de token roteren
+// zonder code-wijziging. Fallback op de oude hardcoded waarde zodat een
+// bestaande deployment blijft werken tot de property is ingesteld.
+function getApiToken_() {
   try {
-    if (!e || !e.parameter || e.parameter.token !== "ekast-2025") {
+    var t = PropertiesService.getScriptProperties().getProperty("API_TOKEN");
+    if (t) return t;
+  } catch (err) {}
+  return "ekast-2025";
+}
+
+// Acties die de sheet wijzigen. Deze draaien onder een script-lock zodat
+// twee toestellen die tegelijk schrijven elkaars rijen niet kunnen
+// verschuiven (deleteRow op een verschoven index = verkeerde rij weg).
+var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, blockDevice: 1, unblockDevice: 1 };
+
+function handleRequest_(params) {
+  try {
+    if (!params || params.token !== getApiToken_()) {
       return makeResponse({ error: "Ongeautoriseerd" });
     }
-    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "get";
-    if (action === "version")  return makeResponse({ version: "v3", ok: true });
-    if (action === "get")      return makeResponse(handleGet());
-    if (action === "add")      return makeResponse(handleAdd(e.parameter.data));
-    if (action === "update")   return makeResponse(handleUpdate(e.parameter.data));
-    if (action === "delete")   return makeResponse(handleDelete(e.parameter.id));
-    if (action === "log")      return makeResponse(handleLog(e.parameter));
-    if (action === "addRoom")      return makeResponse(handleAddRoom(e.parameter.name, e.parameter.desc));
-    if (action === "getRooms")     return makeResponse(handleGetRooms());
-    if (action === "getBlocklist") return makeResponse(handleGetBlocklist());
-    if (action === "blockDevice")  return makeResponse(handleBlockDevice(e.parameter.deviceId, e.parameter.deviceName, e.parameter.blockedBy));
-    if (action === "unblockDevice")return makeResponse(handleUnblockDevice(e.parameter.deviceId));
-    if (action === "getDevices")   return makeResponse(handleGetDevices());
-    return makeResponse({ error: "Onbekende actie: " + action });
+    var action = params.action || "get";
+    if (MUTATING_ACTIONS[action]) {
+      var lock = LockService.getScriptLock();
+      try {
+        lock.waitLock(20000);
+      } catch (lockErr) {
+        return makeResponse({ error: "Server bezet, probeer opnieuw" });
+      }
+      try {
+        return makeResponse(dispatch_(action, params));
+      } finally {
+        lock.releaseLock();
+      }
+    }
+    return makeResponse(dispatch_(action, params));
   } catch (err) {
-    Logger.log("doGet fout: " + err.message);
+    Logger.log("handleRequest fout: " + err.message);
     return makeResponse({ error: err.message });
   }
 }
 
+function dispatch_(action, params) {
+  if (action === "version")  return { version: "v3", ok: true };
+  if (action === "get")      return handleGet();
+  if (action === "add")      return handleAdd(params.data);
+  if (action === "update")   return handleUpdate(params.data);
+  if (action === "delete")   return handleDelete(params.id);
+  if (action === "log")      return handleLog(params);
+  if (action === "addRoom")      return handleAddRoom(params.name, params.desc);
+  if (action === "getRooms")     return handleGetRooms();
+  if (action === "getBlocklist") return handleGetBlocklist();
+  if (action === "blockDevice")  return handleBlockDevice(params.deviceId, params.deviceName, params.blockedBy);
+  if (action === "unblockDevice")return handleUnblockDevice(params.deviceId);
+  if (action === "getDevices")   return handleGetDevices();
+  return { error: "Onbekende actie: " + action };
+}
+
+function doGet(e) {
+  return handleRequest_(e && e.parameter ? e.parameter : null);
+}
+
+// POST met Content-Type text/plain (geen CORS-preflight nodig). De body is
+// een JSON-object met dezelfde velden als de GET-querystring. Schrijfacties
+// horen via POST: GET-requests kunnen door proxies/prefetchers herhaald
+// worden en lopen tegen URL-lengtelimieten aan.
 function doPost(e) {
-  // Bulk-overschrijven uitgeschakeld — de app gebruikt enkel de granulaire
-  // add/update/delete-acties via doGet. Laat staan om per ongeluk wissen
-  // van de hele sheet te voorkomen.
-  return makeResponse({ error: "POST disabled" });
+  var params = null;
+  try {
+    if (e && e.postData && e.postData.contents) {
+      params = JSON.parse(e.postData.contents);
+    }
+  } catch (err) {
+    return makeResponse({ error: "Ongeldige POST-body" });
+  }
+  // Bulk-overschrijven bestaat bewust niet — enkel de granulaire acties
+  // hierboven, zodat de hele sheet nooit in één call gewist kan worden.
+  return handleRequest_(params);
 }
 
 // ----------------------------------------------------------
