@@ -239,6 +239,106 @@ async function test8() {
   eq(_shownResults.length, 0, "Token-mismatch: resultaat NIET getoond");
 }
 
+// ---------- 9. _scanTargetDims: schaalberekening ----------
+function test9() {
+  let d = _scanTargetDims(4000, 3000);
+  eq(d.w, 2000, "4000x3000 landscape: breedte naar 2000");
+  eq(d.h, 1500, "4000x3000 landscape: hoogte naar 1500");
+  d = _scanTargetDims(3000, 4000);
+  eq(d.w, 1500, "3000x4000 portret: breedte naar 1500");
+  eq(d.h, 2000, "3000x4000 portret: hoogte naar 2000");
+  eq(_scanTargetDims(1600, 1200), null, "Kleine foto: geen schaling nodig");
+  eq(_scanTargetDims(2000, 2000), null, "Exact op de grens: geen schaling");
+  eq(_scanTargetDims(0, 0), null, "0x0: null");
+  eq(_scanTargetDims(undefined, undefined), null, "undefined: null");
+}
+
+// Helper: installeer canvas + createImageBitmap mocks voor de
+// _prepareScanImage tests. Geeft een restore-functie terug.
+function _mockDecodePipeline(bitmapImpl, fakeBlob) {
+  const state = { canvas: null, drawArgs: null };
+  global.createImageBitmap = bitmapImpl;
+  const origCreateElement = global.document.createElement;
+  global.document.createElement = function(tag) {
+    if (tag === "canvas") {
+      state.canvas = {
+        width: 0, height: 0,
+        getContext: function() {
+          return { drawImage: function(src, x, y, w, h) { state.drawArgs = [x, y, w, h]; } };
+        },
+        toBlob: function(cb) { cb(fakeBlob); }
+      };
+      return state.canvas;
+    }
+    return origCreateElement(tag);
+  };
+  state.restore = function() {
+    delete global.createImageBitmap;
+    global.document.createElement = origCreateElement;
+  };
+  return state;
+}
+
+// ---------- 10. _prepareScanImage: grote foto wordt verkleind tot blob ----------
+async function test10() {
+  reset();
+  const fakeBlob = { size: 12345, type: "image/jpeg" };
+  let closed = false;
+  const pipe = _mockDecodePipeline(function() {
+    return Promise.resolve({ width: 4000, height: 3000, close: function() { closed = true; } });
+  }, fakeBlob);
+  const out = await _prepareScanImage(mockFile({ size: 8 * 1024 * 1024 }));
+  eq(out === fakeBlob, true, "Grote foto: verkleinde blob teruggegeven");
+  eq(pipe.drawArgs && pipe.drawArgs[2], 2000, "Grote foto: getekend op 2000px breed");
+  eq(pipe.drawArgs && pipe.drawArgs[3], 1500, "Grote foto: getekend op 1500px hoog");
+  eq(closed, true, "Grote foto: ImageBitmap.close() aangeroepen (geheugen)");
+  pipe.restore();
+}
+
+// ---------- 11. _prepareScanImage: options-bag niet ondersteund → kale retry ----------
+async function test11() {
+  reset();
+  const fakeBlob = { size: 999, type: "image/jpeg" };
+  const calls = [];
+  const pipe = _mockDecodePipeline(function(f, opts) {
+    calls.push(opts);
+    if (opts) return Promise.reject(new Error("options niet ondersteund"));
+    return Promise.resolve({ width: 1000, height: 800, close: function() {} });
+  }, fakeBlob);
+  const out = await _prepareScanImage(mockFile({}));
+  eq(calls.length, 2, "Options-fout: createImageBitmap kaal opnieuw geprobeerd");
+  eq(out === fakeBlob, true, "Options-fout: alsnog her-encodeerde blob terug");
+  // Kleine foto wordt niet geschaald maar wél her-encodeerd (EXIF/HEIC)
+  eq(pipe.drawArgs && pipe.drawArgs[2], 1000, "Kleine foto: originele breedte behouden");
+  pipe.restore();
+}
+
+// ---------- 12. _prepareScanImage: geen decode-API's → origineel File terug ----------
+async function test12() {
+  reset();
+  // In Node bestaan createImageBitmap en Image niet — fallback-pad.
+  const f = mockFile({});
+  const out = await _prepareScanImage(f);
+  eq(out === f, true, "Geen decode-API's: origineel File-object terug");
+}
+
+// ---------- 13. End-to-end: recognize() krijgt de voorbereide blob ----------
+async function test13() {
+  reset();
+  // test8 heeft Tesseract.createWorker overschreven met een pending mock;
+  // herstel de standaard worker-mock.
+  global.Tesseract.createWorker = function() { return Promise.resolve(_makeWorkerMock()); };
+  const fakeBlob = { size: 555, type: "image/jpeg" };
+  const pipe = _mockDecodePipeline(function() {
+    return Promise.resolve({ width: 4000, height: 3000, close: function() {} });
+  }, fakeBlob);
+  await onScanFileChosen({ target: { files: [mockFile({ size: 5 * 1024 * 1024 })] } });
+  eq(_tesseractCalled, true, "E2E met voorbewerking: OCR aangeroepen");
+  eq(_recognizeArg === fakeBlob, true, "E2E: recognize() krijgt de verkleinde blob");
+  eq(_shownResults.length, 1, "E2E: resultaat getoond");
+  pipe.restore();
+}
+
 // Run alle tests sequentieel
 (async function() {
   await test1();
@@ -249,6 +349,11 @@ async function test8() {
   await test6();
   await test7();
   await test8();
+  test9();
+  await test10();
+  await test11();
+  await test12();
+  await test13();
   console.log("Scan-flow tests voltooid.");
   summary();
 })();

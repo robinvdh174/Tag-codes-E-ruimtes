@@ -2341,6 +2341,106 @@ function _setScanProgress(msg) {
 // oudere toestellen.
 const _SCAN_MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 
+// Maximale langste zijde (px) van de foto die naar Tesseract gaat.
+// Een werkbon is een A4-document; ~2000px is ruim voldoende voor OCR
+// en is een factor 4-6 minder pixels dan een onbewerkte 12MP-telefoonfoto
+// — dat scheelt seconden analysetijd én tientallen MB werkgeheugen.
+const _SCAN_MAX_DIM = 2000;
+const _SCAN_JPEG_QUALITY = 0.9;
+
+// Berekent de doelafmetingen voor het verkleinen van een foto.
+// Geeft null terug als schalen niet nodig is (al klein genoeg) of als
+// de invoer ongeldig is.
+function _scanTargetDims(w, h) {
+  if (!w || !h || w < 0 || h < 0) return null;
+  const longest = Math.max(w, h);
+  if (longest <= _SCAN_MAX_DIM) return null;
+  const scale = _SCAN_MAX_DIM / longest;
+  return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+
+// Bereidt de gekozen foto voor op OCR. Dit lost drie problemen tegelijk op:
+// 1. EXIF-rotatie: Tesseract negeert de EXIF-orientation-tag, waardoor
+//    portretfoto's intern zijwaarts liggen en de OCR vrijwel niets leest.
+//    De browser-decoder past de rotatie wél toe; her-encoderen "bakt"
+//    die in.
+// 2. Grootte: verkleinen naar max _SCAN_MAX_DIM px maakt de analyse
+//    veel sneller en voorkomt OOM op oudere toestellen.
+// 3. Formaat: HEIC-foto's (iPhone-bibliotheek) kan Tesseract niet
+//    decoderen; de browser vaak wel — na her-encoderen is het JPEG.
+// Faalt er íéts (oude browser, exotisch formaat), dan geven we het
+// originele File-object terug zodat het oude gedrag blijft werken.
+async function _prepareScanImage(file) {
+  try {
+    let src = null;
+    let w = 0, h = 0;
+    let cleanup = function() {};
+
+    if (typeof createImageBitmap === "function") {
+      try {
+        // "from-image" expliciet meegeven: oudere Chrome-versies passen
+        // EXIF-rotatie anders niet toe bij createImageBitmap.
+        src = await createImageBitmap(file, { imageOrientation: "from-image" });
+      } catch (e) {
+        // Sommige browsers ondersteunen de options-bag niet — retry kaal.
+        try { src = await createImageBitmap(file); } catch (e2) { src = null; }
+      }
+      if (src) {
+        w = src.width; h = src.height;
+        cleanup = function() { try { src.close(); } catch (e) {} };
+      }
+    }
+
+    if (!src && typeof Image !== "undefined" &&
+        typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+      // Fallback voor browsers zonder createImageBitmap. De blob-URL
+      // blijft op de main thread (een <img> hier is veilig — de iOS
+      // Safari-bug betrof blob-URLs die in de wórker gefetcht werden).
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        if (img.decode) {
+          await img.decode();
+        } else {
+          await new Promise(function(res, rej) { img.onload = res; img.onerror = rej; });
+        }
+        src = img;
+        w = img.naturalWidth; h = img.naturalHeight;
+        cleanup = function() { try { URL.revokeObjectURL(url); } catch (e) {} };
+      } catch (e) {
+        try { URL.revokeObjectURL(url); } catch (e2) {}
+        return file;
+      }
+    }
+
+    if (!src || !w || !h) { cleanup(); return file; }
+
+    const dims = _scanTargetDims(w, h) || { w: w, h: h };
+    const canvas = document.createElement("canvas");
+    canvas.width = dims.w;
+    canvas.height = dims.h;
+    const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+    if (!ctx) { cleanup(); return file; }
+    ctx.drawImage(src, 0, 0, dims.w, dims.h);
+    cleanup();
+
+    const blob = await new Promise(function(resolve) {
+      if (canvas.toBlob) {
+        canvas.toBlob(resolve, "image/jpeg", _SCAN_JPEG_QUALITY);
+      } else {
+        resolve(null);
+      }
+    });
+    // Canvas-buffer expliciet vrijgeven — iOS houdt canvassen anders
+    // lang in het geheugen vast.
+    canvas.width = 1; canvas.height = 1;
+    return (blob && blob.size > 0) ? blob : file;
+  } catch (e) {
+    return file;
+  }
+}
+
 // Token dat ophoogt bij elke nieuwe scan. Late OCR-callbacks van een
 // geannuleerde scan negeren we door het token te vergelijken — voorkomt
 // dat een afgesloten scan-modal alsnog resultaten of progress toont.
@@ -2424,6 +2524,12 @@ async function onScanFileChosen(ev) {
   const myToken = ++_scanToken;
   const isAlive = function() { return _scanToken === myToken; };
 
+  // Start het decoderen/verkleinen van de foto alvast, parallel aan het
+  // laden van de scan-bibliotheek — scheelt seconden op grote foto's.
+  // _prepareScanImage rejected nooit: bij elke fout komt het originele
+  // File-object terug.
+  const preparedPromise = _prepareScanImage(file);
+
   const init = document.getElementById("scanInitial");
   const proc = document.getElementById("scanProcessing");
   const res = document.getElementById("scanResult");
@@ -2472,15 +2578,20 @@ async function onScanFileChosen(ev) {
     });
     if (!isAlive()) return;
 
+    _stage = "prepare-image";
+    _setScanProgress("Foto voorbereiden…");
+    const ocrInput = await preparedPromise;
+    if (!isAlive()) return;
+
     _stage = "recognize";
     _setScanProgress("Bon analyseren…");
-    // Het File-object wordt rechtstreeks doorgegeven aan recognize().
+    // Het File/Blob-object wordt rechtstreeks doorgegeven aan recognize().
     // Tesseract.js v5 ondersteunt File/Blob via structured cloning naar
-    // de worker. We vermijden bewust URL.createObjectURL: blob-URLs die
-    // op de main thread worden aangemaakt zijn op iOS Safari niet altijd
-    // bereikbaar vanuit web workers, waardoor recognize() faalt met
-    // "TypeError: Failed to fetch" in tesseract.min.js.
-    const result = await _tWorker.recognize(file);
+    // de worker. We vermijden bewust URL.createObjectURL richting de
+    // worker: blob-URLs die op de main thread worden aangemaakt zijn op
+    // iOS Safari niet altijd bereikbaar vanuit web workers, waardoor
+    // recognize() faalt met "TypeError: Failed to fetch" in tesseract.min.js.
+    const result = await _tWorker.recognize(ocrInput);
     if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
