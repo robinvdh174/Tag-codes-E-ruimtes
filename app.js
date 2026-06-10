@@ -2446,6 +2446,64 @@ async function _prepareScanImage(file) {
 // dat een afgesloten scan-modal alsnog resultaten of progress toont.
 let _scanToken = 0;
 
+// ── Worker-hergebruik ───────────────────────────────────────
+// Het opstarten van de Tesseract-worker (WASM instantiëren + taaldata
+// laden) kost enkele seconden. Wie meerdere bonnen kort na elkaar scant
+// of na een mislezing opnieuw probeert, betaalde die opstartkost telkens
+// opnieuw. Daarom cachen we de worker en ruimen we hem pas op na een
+// periode zonder scans — zo blijft het geheugen (~50-100 MB) niet
+// onnodig lang bezet op oudere toestellen.
+const _SCAN_WORKER_IDLE_MS = 2 * 60 * 1000;
+let _scanWorkerPromise = null;
+let _scanWorkerIdleTimer = null;
+
+// Indirectie voor de progress-logger: de logger wordt eenmalig aan de
+// worker gebonden bij createWorker, maar moet de voortgang van de
+// HUIDIGE scan rapporteren. Elke scan zet deze hook opnieuw; de hook
+// checkt zelf het scan-token zodat een geannuleerde scan stil blijft.
+let _scanProgressHook = null;
+
+function _getScanWorker(baseUrl) {
+  if (_scanWorkerPromise) return _scanWorkerPromise;
+  const p = Tesseract.createWorker("eng", 1, {
+    workerPath: baseUrl + "/worker.min.js",
+    corePath: baseUrl,
+    langPath: baseUrl,
+    workerBlobURL: false,
+    logger: function(prog) {
+      if (_scanProgressHook) _scanProgressHook(prog);
+    }
+  });
+  _scanWorkerPromise = p;
+  // Een mislukte start niet cachen — een volgende poging moet vers
+  // kunnen beginnen. De rejection zelf bereikt de aanroeper via await.
+  p.catch(function() { if (_scanWorkerPromise === p) _scanWorkerPromise = null; });
+  return p;
+}
+
+// Ruimt de gecachte worker op (fire-and-forget; terminate is async).
+function _releaseScanWorker() {
+  if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+  const p = _scanWorkerPromise;
+  _scanWorkerPromise = null;
+  if (p) {
+    p.then(function(w) {
+      if (w && typeof w.terminate === "function") return w.terminate();
+    }).catch(function() {});
+  }
+}
+
+// Plant het opruimen van de worker na _SCAN_WORKER_IDLE_MS zonder scans.
+// Elke nieuwe scan annuleert de lopende timer en plant na afloop opnieuw.
+function _scheduleScanWorkerRelease() {
+  if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+  if (!_scanWorkerPromise) return;
+  _scanWorkerIdleTimer = setTimeout(function() {
+    _scanWorkerIdleTimer = null;
+    _releaseScanWorker();
+  }, _SCAN_WORKER_IDLE_MS);
+}
+
 // Pre-flight check: probeer elk Tesseract-asset op te halen voordat we
 // Tesseract.recognize starten. Tesseract's interne worker geeft bij een
 // failure een vage 'Load failed' zonder URL — wij rapporteren wél exact
@@ -2538,44 +2596,48 @@ async function onScanFileChosen(ev) {
   if (proc) proc.style.display = "";
   _setScanProgress("Scan-bibliotheek laden…");
 
-  let _tWorker = null;
   let _stage = "init";
   try {
     _stage = "load-script";
     await _loadTesseract();
     if (!isAlive()) return; // modal ondertussen gesloten
 
-    // Pre-flight check: probeer elk Tesseract-asset op te halen via
-    // HEAD-request. Zo zien we direct welke specifieke URL faalt
-    // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
-    _stage = "preflight";
-    _setScanProgress("Bestanden controleren…");
     // baseUrl wordt zonder trailing slash gebruikt voor Tesseract-paden
     // omdat Tesseract intern zelf '/' toevoegt — dubbel-slash kan op
     // sommige servers (en strict CSP-paden) onverwacht falen.
     const baseUrlWithSlash = new URL(TESSERACT_VENDOR_DIR, window.location.href).href;
     const baseUrl = baseUrlWithSlash.replace(/\/$/, "");
-    await _preflightTesseract(baseUrlWithSlash);
-    if (!isAlive()) return;
+
+    // Nieuwe scan: geplande idle-opruiming annuleren — de worker wordt
+    // zo meteen weer gebruikt.
+    if (_scanWorkerIdleTimer) { clearTimeout(_scanWorkerIdleTimer); _scanWorkerIdleTimer = null; }
+
+    if (!_scanWorkerPromise) {
+      // Pre-flight check: probeer elk Tesseract-asset op te halen vóór
+      // de worker start. Zo zien we direct welke specifieke URL faalt
+      // i.p.v. de generieke 'Load failed' van Tesseract's interne worker.
+      // Alleen nodig bij een verse worker — bij hergebruik zijn de
+      // assets al geladen en besparen we deze fetches per vervolg-scan.
+      _stage = "preflight";
+      _setScanProgress("Bestanden controleren…");
+      await _preflightTesseract(baseUrlWithSlash);
+      if (!isAlive()) return;
+    }
 
     // Worker expliciet maken via createWorker (i.p.v. recognize-shorthand)
     // zodat we een falende stap exact kunnen pinpointen en opruimen.
+    // _getScanWorker hergebruikt een eerder gestarte worker.
     _stage = "create-worker";
     _setScanProgress("Worker starten…");
-    _tWorker = await Tesseract.createWorker("eng", 1, {
-      workerPath: baseUrl + "/worker.min.js",
-      corePath: baseUrl,
-      langPath: baseUrl,
-      workerBlobURL: false,
-      logger: function(p) {
-        if (!isAlive()) return;
-        if (p && p.status === "recognizing text" && typeof p.progress === "number") {
-          _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
-        } else if (p && p.status) {
-          _setScanProgress(p.status);
-        }
+    _scanProgressHook = function(p) {
+      if (!isAlive()) return;
+      if (p && p.status === "recognizing text" && typeof p.progress === "number") {
+        _setScanProgress("Bon analyseren… " + Math.round(p.progress * 100) + "%");
+      } else if (p && p.status) {
+        _setScanProgress(p.status);
       }
-    });
+    };
+    const worker = await _getScanWorker(baseUrl);
     if (!isAlive()) return;
 
     _stage = "prepare-image";
@@ -2591,11 +2653,18 @@ async function onScanFileChosen(ev) {
     // worker: blob-URLs die op de main thread worden aangemaakt zijn op
     // iOS Safari niet altijd bereikbaar vanuit web workers, waardoor
     // recognize() faalt met "TypeError: Failed to fetch" in tesseract.min.js.
-    const result = await _tWorker.recognize(ocrInput);
+    const result = await worker.recognize(ocrInput);
     if (!isAlive()) return;
     const text = (result && result.data && result.data.text) || "";
     _showScanResult(_parseBonText(text));
   } catch (err) {
+    // Een worker die faalde bij het starten of tijdens recognize kan in
+    // een kapotte staat achterblijven — niet hergebruiken. Alleen als
+    // deze scan nog "leeft": een geannuleerde scan mag de worker van een
+    // eventueel al gestarte nieuwe scan niet onder diens voeten weghalen.
+    if (isAlive() && (_stage === "create-worker" || _stage === "recognize")) {
+      _releaseScanWorker();
+    }
     if (!isAlive()) return;
     console.warn("Scan mislukt in stage '" + _stage + "':", err);
     let msg = err && err.message ? err.message : "Onbekende fout";
@@ -2624,10 +2693,10 @@ async function onScanFileChosen(ev) {
     msg += "\n\n" + detail;
     _showScanError(msg);
   } finally {
-    // Worker opruimen om geheugenlek te voorkomen, ook bij fout.
-    if (_tWorker && typeof _tWorker.terminate === "function") {
-      try { await _tWorker.terminate(); } catch (e) {}
-    }
+    // Worker niet meteen termineren maar idle-opruiming plannen: een
+    // snelle vervolg-scan (volgende bon, opnieuw proberen) slaat dan de
+    // opstartkost van enkele seconden over.
+    _scheduleScanWorkerRelease();
     const inp = document.getElementById("scanFileInput");
     if (inp) inp.value = "";
   }
