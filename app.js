@@ -768,7 +768,7 @@ function _doSearchNow(value) {
   if (!raw) {
     _currentSearchTerm = "";
     countEl.innerText = "0";
-    container.innerHTML = "<div class=\"empty\"><b>Typ een kastnummer</b><span id=\"totalCount\">" + data.length + "</span> kasten beschikbaar<br><span style=\"color:#4a9eff;font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;\">Sappi</span></div>";
+    container.innerHTML = "<div class=\"empty\"><b>Typ een kastnummer</b><span id=\"totalCount\">" + data.length + "</span> kasten beschikbaar<br><span style=\"color:var(--info);font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;\">Sappi</span></div>";
     return;
   }
   _currentSearchTerm = raw;
@@ -1731,7 +1731,7 @@ function showConflictDialog(localItem, serverItem) {
     const sv = serverItem[f.key] || "";
     if (lv !== sv) {
       const row = document.createElement("div");
-      row.style.cssText = "margin-bottom:.4rem;padding:.3rem .5rem;background:#1c2030;border-radius:6px;";
+      row.style.cssText = "margin-bottom:.4rem;padding:.3rem .5rem;background:var(--surface-2);border-radius:6px;";
       row.innerHTML = "<b style='color:var(--accent)'>" + esc(f.label) + ":</b><br>" +
         "<span style='color:#e03c3c'>Jij: " + esc(lv || "(leeg)") + "</span><br>" +
         "<span style='color:#2ecc71'>Server: " + esc(sv || "(leeg)") + "</span>";

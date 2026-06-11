@@ -76,7 +76,7 @@
       <div class="empty">
         <b>Typ een kastnummer</b>
         <span id="totalCount">...</span> kasten beschikbaar
-        <br><span style="color:#4a9eff;font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;">Sappi</span>
+        <br><span style="color:var(--info);font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;">Sappi</span>
       </div>
     </div>
   </div>
@@ -249,7 +249,7 @@
     <div class="status-popup-title" style="color:var(--danger);font-size:.85rem;">&#9888; Bevestiging vereist</div>
     <p id="confirmMsg" style="font-size:.88rem;color:var(--text);margin:.6rem 0 1.1rem;line-height:1.55;text-align:left;"></p>
     <button class="status-btn-keuze status-btn-los" id="confirmJaBtn" type="button" style="margin-bottom:.5rem;">Ja, doorgaan</button>
-    <button class="status-btn-keuze" id="confirmNeeBtn" type="button" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);">Annuleren</button>
+    <button class="status-btn-keuze" id="confirmNeeBtn" type="button" style="background:var(--surface-2);color:var(--muted);border:1px solid var(--border);">Annuleren</button>
   </div>
 </div>
 <div class="status-popup" id="statusPopup">
@@ -286,11 +286,11 @@
 <div class="pin-overlay" id="pinOverlay"></div>
 <div class="status-popup" id="conflictOverlay">
   <div class="status-popup-card" style="max-width:340px;">
-    <div class="status-popup-title" style="color:#f39c12;font-size:.85rem;">&#9888; Conflict gedetecteerd</div>
+    <div class="status-popup-title" style="color:var(--warn);font-size:.85rem;">&#9888; Conflict gedetecteerd</div>
     <p style="font-size:.82rem;color:var(--text);margin:.4rem 0 .6rem;line-height:1.5;">Dit record is ondertussen door een ander toestel gewijzigd.</p>
     <div id="conflictBody" style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem;max-height:200px;overflow-y:auto;"></div>
     <button class="status-btn-keuze status-btn-veilig" id="conflictMineBtn" type="button" style="margin-bottom:.5rem;">Mijn versie bewaren</button>
-    <button class="status-btn-keuze" id="conflictServerBtn" type="button" style="background:#1c2030;color:var(--muted);border:1px solid var(--border);">Server versie overnemen</button>
+    <button class="status-btn-keuze" id="conflictServerBtn" type="button" style="background:var(--surface-2);color:var(--muted);border:1px solid var(--border);">Server versie overnemen</button>
   </div>
 </div>
 
