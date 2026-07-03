@@ -525,6 +525,9 @@ async function init() {
   movePill("search");
   updateStatusBadge();
   renderList();
+  // Startscherm van de zoek-tab renderen (toont o.a. "Recent bekeken" —
+  // de statische HTML-fallback kent die chips niet).
+  _doSearchNow(document.getElementById("searchInput").value);
   // Enter-key submit op de "kast toevoegen"-formulier inputs.
   _bindEnterSubmit(document.getElementById("newCode"), addEntry);
   _bindEnterSubmit(document.getElementById("newLocation"), addEntry);
@@ -663,7 +666,6 @@ function movePill(tabName) {
 function renderStatus() {
   _currentSearchTerm = "";
   const active = data.filter(function(d) { return d.status && d.status !== ""; });
-  active.sort(function(a, b) { return (a.location||"").localeCompare(b.location||""); });
   document.getElementById("statusCount").innerText = active.length;
   const container = document.getElementById("statusResults");
   container.textContent = "";
@@ -671,9 +673,44 @@ function renderStatus() {
     container.innerHTML = "<div class=\"empty\"><b>Geen actieve meldingen</b>Alle kasten zijn in bedrijf</div>";
     return;
   }
+  // Zelfde groepering per ruimte als de Lijst-tab: wie meerdere meldingen
+  // heeft, ziet meteen welke in dezelfde ruimte zitten.
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < active.length; i++) frag.appendChild(makeCard(active[i]));
+  _appendGroupedByRoom(frag, active);
   container.appendChild(frag);
+}
+
+// Groepeert items per ruimte en voegt ze — met ruimte-kop — toe aan frag.
+function _appendGroupedByRoom(frag, items) {
+  const groups = {};
+  const order = [];
+  for (let i = 0; i < items.length; i++) {
+    const loc = items[i].location || "(geen ruimte)";
+    if (!groups[loc]) { groups[loc] = []; order.push(loc); }
+    groups[loc].push(items[i]);
+  }
+  order.sort(function(a, b) { return a.localeCompare(b); });
+  for (let g = 0; g < order.length; g++) {
+    const loc = order[g];
+    const hdr = document.createElement("div");
+    hdr.className = "list-room-header";
+    hdr.appendChild(document.createTextNode(loc + " (" + groups[loc].length + ")"));
+    if (ROOM_INFO[loc]) {
+      hdr.appendChild(document.createTextNode(" "));
+      const infoBtn = document.createElement("button");
+      infoBtn.className = "btn-info-loc";
+      infoBtn.type = "button";
+      infoBtn.title = "Waar is dit?";
+      infoBtn.textContent = "ⓘ";
+      (function(l) {
+        infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
+      })(loc);
+      hdr.appendChild(infoBtn);
+    }
+    frag.appendChild(hdr);
+    groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
+    for (let i = 0; i < groups[loc].length; i++) frag.appendChild(makeCard(groups[loc][i]));
+  }
 }
 
 function updateStatusBadge() {
@@ -756,6 +793,85 @@ function _scoreItem(d, qNormCode, qNormText) {
   return -1;
 }
 
+// ============================================================
+// RECENT BEKEKEN — laatste kaarten die de gebruiker aantikte.
+// Getoond op het lege zoekscherm zodat een kast die je gisteren
+// nodig had met één tik terug te vinden is.
+// ============================================================
+const RECENT_KEY = "ekast-recent";
+const RECENT_MAX = 6;
+function getRecents() {
+  try {
+    const arr = JSON.parse(safeGet(RECENT_KEY, "[]"));
+    return Array.isArray(arr) ? arr.filter(function(x) { return typeof x === "string" && x; }) : [];
+  } catch(e) { return []; }
+}
+function recordRecent(code) {
+  const c = String(code == null ? "" : code).trim();
+  if (!c) return;
+  const arr = getRecents().filter(function(x) { return x !== c; });
+  arr.unshift(c);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(arr.slice(0, RECENT_MAX))); } catch(e) {}
+}
+
+// Leeg zoekscherm: totaalteller + recent bekeken + woordmerk.
+// DOM-opbouw i.p.v. innerHTML omdat recente codes user-data zijn.
+function _renderSearchEmpty(container) {
+  container.textContent = "";
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  const title = document.createElement("b");
+  title.textContent = "Typ een kastnummer";
+  empty.appendChild(title);
+  const total = document.createElement("span");
+  total.id = "totalCount";
+  total.textContent = data.length;
+  empty.appendChild(total);
+  empty.appendChild(document.createTextNode(" kasten beschikbaar"));
+
+  // Codes van intussen verwijderde kasten niet meer aanbieden.
+  const recents = getRecents().filter(function(code) {
+    const n = _normCode(code);
+    return data.some(function(d) { return _normCode(d.code) === n; });
+  });
+  if (recents.length > 0) {
+    const wrap = document.createElement("div");
+    wrap.className = "suggestions";
+    const lbl = document.createElement("div");
+    lbl.className = "suggestions-label";
+    lbl.textContent = "Recent bekeken:";
+    wrap.appendChild(lbl);
+    const row = document.createElement("div");
+    row.className = "suggestions-row";
+    recents.forEach(function(code) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion-chip";
+      chip.textContent = code;
+      chip.addEventListener("click", function() {
+        const inp = document.getElementById("searchInput");
+        if (inp) { inp.value = code; doSearch(code); }
+      });
+      row.appendChild(chip);
+    });
+    wrap.appendChild(row);
+    empty.appendChild(wrap);
+  }
+
+  const logo = document.createElement("span");
+  logo.className = "search-logo";
+  logo.textContent = "Sappi";
+  empty.appendChild(logo);
+  container.appendChild(empty);
+}
+
+// Wis-knopje (✕) in de zoekbalk enkel tonen als er iets te wissen valt.
+function _updateSearchClear() {
+  const btn = document.getElementById("btnSearchClear");
+  const inp = document.getElementById("searchInput");
+  if (btn && inp) btn.hidden = inp.value.length === 0;
+}
+
 let _searchTimer = null;
 function doSearch(value) {
   clearTimeout(_searchTimer);
@@ -765,10 +881,11 @@ function _doSearchNow(value) {
   const raw = String(value == null ? "" : value).trim();
   const countEl = document.getElementById("resultCount");
   const container = document.getElementById("searchResults");
+  _updateSearchClear();
   if (!raw) {
     _currentSearchTerm = "";
     countEl.innerText = "0";
-    container.innerHTML = "<div class=\"empty\"><b>Typ een kastnummer</b><span id=\"totalCount\">" + data.length + "</span> kasten beschikbaar<br><span style=\"color:var(--info);font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;\">Sappi</span></div>";
+    _renderSearchEmpty(container);
     return;
   }
   _currentSearchTerm = raw;
@@ -893,6 +1010,7 @@ function makeCard(item) {
   const card = document.createElement("div");
   card.className = "card";
   card.id = "c-" + id;
+  if (item.code) card.dataset.code = item.code;
   card.setAttribute("role", "button");
   card.setAttribute("tabindex", "0");
   card.addEventListener("click", function() { selectCard(card); });
@@ -1049,6 +1167,7 @@ function makeCard(item) {
 function selectCard(el) {
   document.querySelectorAll(".card").forEach(function(c) { c.classList.remove("selected"); });
   el.classList.add("selected");
+  if (el.dataset && el.dataset.code) recordRecent(el.dataset.code);
 }
 
 function toggleEdit(id) {
@@ -1278,35 +1397,7 @@ function showFiltered() {
   const frag = document.createDocumentFragment();
 
   if (activeRoom === "all") {
-    const groups = {};
-    const order = [];
-    for (let i = 0; i < filtered.length; i++) {
-      const loc = filtered[i].location || "(geen ruimte)";
-      if (!groups[loc]) { groups[loc] = []; order.push(loc); }
-      groups[loc].push(filtered[i]);
-    }
-    order.sort(function(a, b) { return a.localeCompare(b); });
-    for (let g = 0; g < order.length; g++) {
-      const loc = order[g];
-      const hdr = document.createElement("div");
-      hdr.className = "list-room-header";
-      hdr.appendChild(document.createTextNode(loc + " (" + groups[loc].length + ")"));
-      if (ROOM_INFO[loc]) {
-        hdr.appendChild(document.createTextNode(" "));
-        const infoBtn = document.createElement("button");
-        infoBtn.className = "btn-info-loc";
-        infoBtn.type = "button";
-        infoBtn.title = "Waar is dit?";
-        infoBtn.textContent = "ⓘ";
-        (function(l) {
-          infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
-        })(loc);
-        hdr.appendChild(infoBtn);
-      }
-      frag.appendChild(hdr);
-      groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
-      for (let i = 0; i < groups[loc].length; i++) frag.appendChild(makeCard(groups[loc][i]));
-    }
+    _appendGroupedByRoom(frag, filtered);
   } else {
     filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
     for (let i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
@@ -3469,13 +3560,21 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   });
 })();
 
-// Tab balk: verbergen bij scroll omlaag, tonen bij scroll omhoog
+// Tab balk: verbergen bij scroll omlaag, tonen bij scroll omhoog.
+// Zelfde scroll-handler stuurt ook de "terug naar boven"-knop aan.
 (function() {
   var tabsWrap = document.querySelector('.tabs-pill-wrap');
   var header = document.querySelector('header');
   if (!tabsWrap || !header) return;
   var lastY = 0;
   var ticking = false;
+
+  var scrollTopBtn = document.getElementById('btnScrollTop');
+  if (scrollTopBtn) {
+    scrollTopBtn.addEventListener('click', function() {
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0, 0); }
+    });
+  }
 
   // We bewaren de offset zowel als inline style (voor backwards compat)
   // als in CSS-variabele --header-h zodat de sticky-positie ook correct
@@ -3500,6 +3599,9 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
       } else if (y < lastY || y <= 4) {
         tabsWrap.classList.remove('tabs-hidden');
       }
+      // "Terug naar boven" pas tonen na flink scrollen — bij 318 kasten
+      // is terugzwiepen naar de zoekbalk anders veel duimwerk.
+      if (scrollTopBtn) scrollTopBtn.hidden = y < 600;
       lastY = y;
       ticking = false;
     });
@@ -3535,6 +3637,13 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   });
 
   on("searchInput", "input", function(e) { doSearch(e.target.value); });
+  on("btnSearchClear", "click", function() {
+    const inp = document.getElementById("searchInput");
+    if (!inp) return;
+    inp.value = "";
+    _doSearchNow("");
+    inp.focus();
+  });
   on("btnScanCam", "click", openScan);
 
   on("btnLabelsClear", "click", werkbonClearAll);

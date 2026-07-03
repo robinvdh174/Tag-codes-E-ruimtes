@@ -41,7 +41,8 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
 .count{font-size:.75rem;color:var(--muted);margin-bottom:.8rem;font-family:monospace;}
 .count b{color:var(--accent);}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:.7rem;border-left:3px solid var(--accent);position:relative;cursor:pointer;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:.7rem;border-left:3px solid var(--accent);position:relative;cursor:pointer;transition:background .15s;}
+.card:active{background:var(--surface-2);}
 .card.selected{border-color:var(--accent);background:#222a3f;box-shadow:0 0 0 2px var(--accent);}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;}
 .card-info{flex:1;min-width:0;}
@@ -50,7 +51,10 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .note{font-size:.8rem;color:#7a8aaa;font-style:italic;margin-top:.3rem;}
 .pos{font-size:.8rem;color:#a0c4ff;margin-top:.2rem;}
 .meta{font-size:.7rem;color:var(--muted);margin-top:.3rem;}
-.sbtn-veilig{display:inline-block;padding:.25rem .7rem;border-radius:20px;border:1px solid var(--success);background:var(--success-bg);color:var(--success);font-size:.72rem;cursor:pointer;font-family:var(--font-sans);font-weight:700;}
+/* Neutrale status ("In bedrijf") oogt bewust rustig — enkel afwijkende
+   statussen (Veiliggesteld/Losgekoppeld) krijgen een gevulde kleur, zodat
+   die er in lange lijsten meteen uitspringen. */
+.sbtn-veilig{display:inline-block;padding:.35rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--success);font-size:.72rem;cursor:pointer;font-family:var(--font-sans);font-weight:700;}
 .sbtn-veilig.secured{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
 .sbtn-veilig.losgekoppeld{border-color:var(--danger);background:var(--danger-bg);color:var(--danger);}
 .status-popup{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:450;display:none;align-items:center;justify-content:center;padding:1.5rem;}
@@ -61,7 +65,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .status-btn-vrij{background:var(--success-bg);color:var(--success);border:1px solid var(--success);}
 .status-btn-veilig{background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);}
 .status-btn-los{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger);}
-.btn-pencil{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.6;}
+.btn-pencil{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.6;min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;}
 .btn-pencil svg{width:18px;height:18px;display:block;}
 .edit-actions{display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);}
 .edit-actions.open{display:block;}
@@ -145,6 +149,10 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .search-bar-ico svg{width:18px;height:18px;display:block;}
 .search-bar-wrap input[type=text]{flex:1;border:none!important;border-radius:0!important;background:transparent;padding:.75rem .5rem;margin:0;min-width:0;}
 .search-bar-wrap input[type=text]:focus{border-color:transparent!important;}
+.search-bar-clear{background:none;border:none;cursor:pointer;padding:0 .5rem;color:var(--muted);display:flex;align-items:center;flex-shrink:0;min-height:44px;}
+.search-bar-clear[hidden]{display:none;}
+.search-bar-clear svg{width:16px;height:16px;display:block;}
+.search-bar-clear:active{color:var(--text);}
 .search-bar-divider{width:1px;height:22px;background:var(--border);flex-shrink:0;}
 .search-bar-cam{background:none;border:none;cursor:pointer;padding:0 .9rem 0 .75rem;color:var(--accent);display:flex;align-items:center;flex-shrink:0;}
 .search-bar-cam svg{width:22px;height:22px;display:block;}
@@ -169,7 +177,7 @@ input[type=date]:focus{border-color:var(--accent);}
 .setup-box code{font-family:monospace;color:var(--accent);background:#111;padding:.1rem .3rem;border-radius:3px;font-size:.75rem;}
 @media(min-width:768px){main{max-width:900px;margin:0 auto;}.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;}.card{margin-bottom:0;}}
 /* ===== LABEL TOGGLE BUTTON op kaartjes ===== */
-.btn-label-toggle{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.55;transition:opacity .15s,color .15s;}
+.btn-label-toggle{background:none;border:none;cursor:pointer;padding:.3rem;color:var(--muted);flex-shrink:0;opacity:.55;transition:opacity .15s,color .15s;min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;}
 .btn-label-toggle svg{width:18px;height:18px;display:block;}
 .btn-label-toggle:active{opacity:1;}
 .btn-label-toggle.in-collection{color:var(--accent);opacity:1;}
@@ -205,6 +213,13 @@ input[type=date]:focus{border-color:var(--accent);}
 .device-btn-block{color:var(--danger);border-color:var(--danger);}
 .device-btn-unblock{color:var(--success);border-color:var(--success);}
 .device-btn:disabled{opacity:.4;cursor:not-allowed;color:var(--muted);border-color:var(--muted);}
+/* ===== ZOEK-STARTSCHERM ===== */
+.search-logo{color:var(--info);font-size:2.5rem;font-weight:900;margin-top:2rem;display:block;text-align:center;letter-spacing:.1em;}
+/* ===== TERUG NAAR BOVEN ===== */
+.btn-scroll-top{position:fixed;right:max(1rem,env(safe-area-inset-right));bottom:max(1.2rem,env(safe-area-inset-bottom));width:44px;height:44px;border-radius:50%;background:var(--surface);border:1.5px solid var(--border);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.45);z-index:150;}
+.btn-scroll-top[hidden]{display:none;}
+.btn-scroll-top svg{width:20px;height:20px;display:block;}
+.btn-scroll-top:active{background:var(--surface-2);}
 /* ===== UPDATE BANNER ===== */
 .update-banner{position:fixed;left:50%;bottom:max(1rem,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:.9rem;background:var(--surface);border:1.5px solid var(--accent);border-radius:12px;padding:.7rem 1rem;z-index:600;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:.85rem;font-weight:700;white-space:nowrap;}
 .update-banner button{background:var(--accent);color:#000;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.8rem;font-weight:900;cursor:pointer;}
