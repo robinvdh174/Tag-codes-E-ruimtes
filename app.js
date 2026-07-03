@@ -730,8 +730,20 @@ function updateStatusBadge() {
 // ZOEKEN
 // ============================================================
 // Strip alles behalve a-z/0-9 → "C-404" / "c 404" / "C.404" worden gelijk.
+// Gememoized: bij elke toetsaanslag wordt elke code in data[] opnieuw
+// genormaliseerd — de cache maakt dat een Map-lookup i.p.v. een regex.
+const _normCodeCache = new Map();
 function _normCode(s) {
-  return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const key = String(s == null ? "" : s);
+  let v = _normCodeCache.get(key);
+  if (v === undefined) {
+    // Cache begrensd houden: bij bereiken van de limiet legen (bevat dan
+    // vooral eenmalige zoektermen; de kastcodes vullen zich direct weer).
+    if (_normCodeCache.size > 4000) _normCodeCache.clear();
+    v = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    _normCodeCache.set(key, v);
+  }
+  return v;
 }
 // Lichte normalisatie voor vrije tekst (ruimte/notitie/positie).
 function _normText(s) {
@@ -1893,7 +1905,7 @@ async function hashPin(pin) {
   return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, "0"); }).join("");
 }
 
-async function checkPin() {
+function checkPin() {
   const device = safeGet("ekast-device", null);
   if (!device) {
     showPinSetup();
@@ -1901,9 +1913,12 @@ async function checkPin() {
   }
   const lastUnlock = parseInt(safeGet("ekast-unlock", "0"), 10);
   if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) {
-    const allowed = await fetchAndCheckBlocklist();
-    if (!allowed) { showAccessDenied(); return; }
+    // Synchroon checken tegen de gecachete blocklist zodat de app direct
+    // opent — de verse lijst wordt op de achtergrond opgehaald en gooit
+    // een intussen geblokkeerd toestel alsnog buiten.
+    if (_isDeviceBlocked()) { showAccessDenied(); return; }
     init();
+    _verifyBlocklistInBackground();
   } else {
     showPinEnter();
   }
@@ -2041,7 +2056,7 @@ async function verifyPin() {
   }
 }
 
-async function unlockApp() {
+function unlockApp() {
   safeSet("ekast-unlock", Date.now().toString());
   if (document.activeElement) document.activeElement.blur();
   // Activiteitslistener slechts één keer hechten
@@ -2058,15 +2073,48 @@ async function unlockApp() {
       }, {passive: true});
     });
   }
-  const allowed = await fetchAndCheckBlocklist();
-  if (!allowed) { showAccessDenied(); return; }
+  // Niet wachten op de server: check synchroon tegen de gecachete blocklist
+  // en open de app meteen. Voorheen blokkeerde een await op het netwerk
+  // (Apps Script cold start = 1-3 s) het scherm ná een correcte PIN.
+  // De verse lijst komt op de achtergrond binnen en sluit een intussen
+  // geblokkeerd toestel alsnog uit.
+  if (_isDeviceBlocked()) { showAccessDenied(); return; }
   document.getElementById("pinOverlay").classList.remove("open");
   init();
+  _verifyBlocklistInBackground();
 }
 
 // ============================================================
 // TOEGANGSBEHEER — GEBLOKKEERDE TOESTELLEN
 // ============================================================
+
+// Gecachete blocklist van de vorige sessie meteen laden zodat de
+// opstart-check synchroon kan gebeuren — geen netwerk-wachttijd bij
+// het openen van de app.
+(function loadCachedBlocklist() {
+  try {
+    const arr = JSON.parse(safeGet("ekast-blocklist-cache", "[]"));
+    if (Array.isArray(arr)) _blocklist = arr;
+  } catch(e) { console.warn("Blocklist-cache laden mislukt:", e); }
+})();
+
+// Zorg dat dit toestel altijd een stabiel ID heeft, ook als 'ekast-device-id'
+// ontbreekt. Zonder ID kan de blocklist het toestel niet identificeren —
+// voorheen werd dan onvoorwaardelijk toegang verleend.
+function _ensureDeviceId() {
+  let uid = safeGet("ekast-device-id", null);
+  if (!uid) {
+    uid = newId().slice(0, 8).toUpperCase();
+    safeSet("ekast-device-id", uid);
+  }
+  return uid;
+}
+
+// Synchrone check tegen de (laatst bekende) blocklist — geen netwerk.
+function _isDeviceBlocked() {
+  const uid = _ensureDeviceId();
+  return _blocklist.some(function(id) { return String(id).toUpperCase() === uid.toUpperCase(); });
+}
 
 async function fetchAndCheckBlocklist() {
   if (!SCRIPT_URL) return true;
@@ -2086,25 +2134,26 @@ async function fetchAndCheckBlocklist() {
       safeSet("ekast-blocklist-cache", JSON.stringify(json));
     }
   } catch(e) {
+    // _blocklist bevat al de gecachete lijst (geladen bij start) —
+    // de check hieronder valt daar automatisch op terug.
     console.warn("Blocklist ophalen mislukt:", e);
-    const cached = safeGet("ekast-blocklist-cache", null);
-    if (cached) {
-      try { const arr = JSON.parse(cached); if (Array.isArray(arr)) _blocklist = arr; } catch(_) {}
-    }
   }
-  // Zorg dat dit toestel altijd een stabiel ID heeft, ook als 'ekast-device-id'
-  // ontbreekt. Zonder ID kan de blocklist het toestel niet identificeren —
-  // voorheen werd dan onvoorwaardelijk toegang verleend. We genereren er hier
-  // direct één zodat de check altijd tegen een echt ID gebeurt.
-  let uid = safeGet("ekast-device-id", null);
-  if (!uid) {
-    uid = newId().slice(0, 8).toUpperCase();
-    safeSet("ekast-device-id", uid);
-  }
-  return !_blocklist.some(function(id) { return id.toUpperCase() === uid.toUpperCase(); });
+  return !_isDeviceBlocked();
+}
+
+// Haalt de verse blocklist op zonder de UI te blokkeren; een intussen
+// geblokkeerd toestel wordt alsnog buitengezet.
+function _verifyBlocklistInBackground() {
+  fetchAndCheckBlocklist().then(function(allowed) {
+    if (!allowed) showAccessDenied();
+  }).catch(function(e) { console.warn("Blocklist-verificatie mislukt:", e); });
 }
 
 function showAccessDenied() {
+  // Kan ook binnenkomen terwijl de app al draait (achtergrond-verificatie
+  // van de blocklist) — stop dan de auto-sync zodat een geblokkeerd
+  // toestel geen data meer ophaalt.
+  if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
   const ov = document.getElementById("pinOverlay");
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
@@ -2627,9 +2676,20 @@ async function _preflightTesseract(baseUrl) {
     }
   };
 
+  // Alle probes parallel afvuren — sequentieel kostte dit tot 6 netwerk-
+  // roundtrips ná elkaar vóór de allereerste scan kon starten.
+  const results = await Promise.all([
+    Promise.all(required.map(probe)),
+    Promise.all(wasmVariants.map(function(variant) {
+      return Promise.all(variant.map(probe));
+    }))
+  ]);
+  const reqResults = results[0];
+  const variantResults = results[1];
+
   // Check verplichte bestanden
-  for (let i = 0; i < required.length; i++) {
-    const r = await probe(required[i]);
+  for (let i = 0; i < reqResults.length; i++) {
+    const r = reqResults[i];
     if (!r.ok) {
       const detail = r.err ? (r.status + ": " + r.err) : ("HTTP " + r.status);
       throw new Error("Asset onbereikbaar: " + r.name + " (" + detail + ")\nURL: " + r.url);
@@ -2637,10 +2697,9 @@ async function _preflightTesseract(baseUrl) {
   }
   // Check ten minste één WASM-variant compleet
   let lastErr = null;
-  for (let v = 0; v < wasmVariants.length; v++) {
-    const variant = wasmVariants[v];
-    const r1 = await probe(variant[0]);
-    const r2 = await probe(variant[1]);
+  for (let v = 0; v < variantResults.length; v++) {
+    const r1 = variantResults[v][0];
+    const r2 = variantResults[v][1];
     if (r1.ok && r2.ok) return; // success — ten minste één variant werkt
     lastErr = !r1.ok ? r1 : r2;
   }
