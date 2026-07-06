@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="ekast-icon.svg">
 <meta name="apple-mobile-web-app-title" content="E-Kast">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#f0a500">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -125,7 +126,7 @@
     <div class="form-group"><label>Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" maxlength="50">
-        <button class="btn-room-pick" id="btnRoomDrop1" type="button">&#9660;</button>
+        <button class="btn-room-pick" id="btnRoomDrop1" type="button" aria-label="Kies een ruimte uit de lijst">&#9660;</button>
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
     </div>
@@ -187,7 +188,7 @@
     <div class="form-group"><label>Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="editLocation" autocomplete="off" maxlength="50">
-        <button class="btn-room-pick" id="btnRoomDrop2" type="button">&#9660;</button>
+        <button class="btn-room-pick" id="btnRoomDrop2" type="button" aria-label="Kies een ruimte uit de lijst">&#9660;</button>
         <div class="room-dropdown" id="roomDrop2"></div>
       </div>
     </div>

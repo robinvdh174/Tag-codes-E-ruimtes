@@ -551,13 +551,15 @@ async function init() {
         // Volgorde van bovenste-eerst: het meest recent geopende modal sluit
         // het eerst. confirmOverlay/statusNaamOverlay/statusPopup zijn altijd
         // bovenop andere modals te openen, dus die eerst.
-        if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
+        if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
+        else if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
         // Conflict-dialoog forceert een keuze; Escape = "mijn versie bewaren"
         // (veiligste default, dialoog komt bij de volgende sync vanzelf terug).
         else if (document.getElementById("conflictOverlay").classList.contains("open")) { resolveConflict("mine"); }
+        else if (document.getElementById("devicesModal").classList.contains("open")) { closeDevicesModal(); }
         else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
         else if (document.getElementById("addRoomModal").classList.contains("open")) { closeAddRoomModal(); }
         else if (document.getElementById("scanModal").classList.contains("open")) { closeScan(); }
@@ -597,8 +599,13 @@ async function init() {
   syncRooms();
   // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
   // wanneer de app op de achtergrond staat of het scherm uit is.
+  // Eerst de offline-wachtrij draineren: als de server tijdelijk plat lag
+  // (zonder netwerkverlies vuurt het 'online'-event niet) raakten wachtende
+  // wijzigingen anders pas gesynct bij de volgende gebruikersactie.
   syncTimer = setInterval(function() {
-    if (document.visibilityState === "visible") syncFromSheets(true);
+    if (document.visibilityState === "visible") {
+      processQueue().then(function() { syncFromSheets(true); });
+    }
   }, SYNC_INTERVAL_MS);
   _initAdminTrigger();
 }
@@ -689,7 +696,7 @@ function _appendGroupedByRoom(frag, items) {
     if (!groups[loc]) { groups[loc] = []; order.push(loc); }
     groups[loc].push(items[i]);
   }
-  order.sort(function(a, b) { return a.localeCompare(b); });
+  order.sort(function(a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
   for (let g = 0; g < order.length; g++) {
     const loc = order[g];
     const hdr = document.createElement("div");
@@ -708,7 +715,8 @@ function _appendGroupedByRoom(frag, items) {
       hdr.appendChild(infoBtn);
     }
     frag.appendChild(hdr);
-    groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
+    // numeric:true → K199 < K600 < K1134 i.p.v. lexicografisch K1134 eerst.
+    groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||"", undefined, { numeric: true }); });
     for (let i = 0; i < groups[loc].length; i++) frag.appendChild(makeCard(groups[loc][i]));
   }
 }
@@ -910,7 +918,7 @@ function _doSearchNow(value) {
   }
   scored.sort(function(a, b) {
     if (b.score !== a.score) return b.score - a.score;
-    return (a.item.code || "").localeCompare(b.item.code || "");
+    return (a.item.code || "").localeCompare(b.item.code || "", undefined, { numeric: true });
   });
   countEl.innerText = scored.length;
   container.textContent = "";
@@ -945,7 +953,7 @@ function _renderNoResults(container, raw, qNormCode) {
     }
     cand.sort(function(a, b) {
       if (a.dist !== b.dist) return a.dist - b.dist;
-      return (a.item.code || "").localeCompare(b.item.code || "");
+      return (a.item.code || "").localeCompare(b.item.code || "", undefined, { numeric: true });
     });
     const top = cand.slice(0, 5);
     if (top.length > 0) {
@@ -1012,6 +1020,35 @@ function appendHighlighted(parent, text, term) {
   }
 }
 
+// Zoals appendHighlighted, maar matcht op de GEnormaliseerde code — net als
+// de zoekfunctie zelf. Zo krijgt "C404" ook een markering wanneer de
+// gebruiker "c 404" of "C-404" typte. De matchpositie in de genormaliseerde
+// string wordt teruggerekend naar de originele tekst (incl. scheidingstekens).
+function appendHighlightedCode(parent, text, term) {
+  const safeText = String(text == null ? "" : text);
+  const qNorm = term ? _normCode(term) : "";
+  if (!qNorm) { appendHighlighted(parent, safeText, term); return; }
+  const idxMap = [];
+  let norm = "";
+  for (let i = 0; i < safeText.length; i++) {
+    const ch = safeText[i].toLowerCase();
+    if (ch >= "a" && ch <= "z" || ch >= "0" && ch <= "9") {
+      idxMap.push(i);
+      norm += ch;
+    }
+  }
+  const start = norm.indexOf(qNorm);
+  if (start === -1) { appendHighlighted(parent, safeText, term); return; }
+  const from = idxMap[start];
+  const to = idxMap[start + qNorm.length - 1] + 1;
+  if (from > 0) parent.appendChild(document.createTextNode(safeText.slice(0, from)));
+  const mark = document.createElement("mark");
+  mark.style.cssText = "background:#f0a500;color:#000;border-radius:2px;padding:0 1px;";
+  mark.textContent = safeText.slice(from, to);
+  parent.appendChild(mark);
+  if (to < safeText.length) parent.appendChild(document.createTextNode(safeText.slice(to)));
+}
+
 let _currentSearchTerm = "";
 
 // Bouwt een kaart als DOM-element (geen innerHTML met user-data → XSS-vrij).
@@ -1041,7 +1078,7 @@ function makeCard(item) {
   if (item.code) {
     const codeEl = document.createElement("div");
     codeEl.className = "code";
-    appendHighlighted(codeEl, item.code, term);
+    appendHighlightedCode(codeEl, item.code, term);
     info.appendChild(codeEl);
   }
 
@@ -1372,7 +1409,7 @@ function renderList() {
   for (let i = 0; i < data.length; i++) {
     if (data[i].location && rooms.indexOf(data[i].location) === -1) rooms.push(data[i].location);
   }
-  rooms.sort(function(a, b) { if (a==="all") return -1; if (b==="all") return 1; return a.localeCompare(b); });
+  rooms.sort(function(a, b) { if (a==="all") return -1; if (b==="all") return 1; return a.localeCompare(b, undefined, { numeric: true }); });
 
   // Tellingen vóór de loop berekenen om O(n*r) te vermijden.
   const counts = {};
@@ -1411,7 +1448,7 @@ function showFiltered() {
   if (activeRoom === "all") {
     _appendGroupedByRoom(frag, filtered);
   } else {
-    filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
+    filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||"", undefined, { numeric: true }); });
     for (let i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
   }
   container.appendChild(frag);
@@ -1433,9 +1470,11 @@ async function addEntry() {
   // installaties of identiek genoemde kasten in dezelfde ruimte). Bij een
   // duplicaat vragen we om bevestiging zodat het niet per ongeluk gebeurt.
   if (code) {
-    const codeNorm = code.toLowerCase();
+    // Genormaliseerd vergelijken (zelfde regels als de zoekfunctie), zodat
+    // "C-404" ook als duplicaat van "C404" wordt herkend.
+    const codeNorm = _normCode(code);
     const dup = data.find(function(d) {
-      return d.location === loc && (d.code || "").trim().toLowerCase() === codeNorm;
+      return d.location === loc && _normCode(d.code) === codeNorm;
     });
     if (dup) {
       showConfirm(
@@ -1700,7 +1739,10 @@ function showToast(msg, err) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.className = "toast show" + (err ? " error" : "");
-  setTimeout(function() { t.classList.remove("show"); }, 2500);
+  // Vorige verberg-timer annuleren: bij twee snelle meldingen na elkaar
+  // verdween de tweede anders al na een fractie van de bedoelde 2,5 s.
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(function() { t.classList.remove("show"); }, 2500);
 }
 
 // ============================================================
@@ -1938,7 +1980,11 @@ function showPinSetup() {
     "<button class='btn-primary' type='button' id='setupPinBtn'>Bevestigen</button>" +
     "</div>";
   document.getElementById("setupPinBtn").addEventListener("click", savePin);
+  // Enter/"ga" op het mobiele toetsenbord = bevestigen.
+  _bindEnterSubmit(document.getElementById("setupDevice"), savePin);
+  _bindEnterSubmit(document.getElementById("setupPin"), savePin);
   ov.classList.add("open");
+  setTimeout(function() { const el = document.getElementById("setupDevice"); if (el) el.focus(); }, 150);
 }
 
 async function savePin() {
@@ -3316,7 +3362,7 @@ function renderLabelsTab() {
     if (!groups[loc]) { groups[loc] = []; order.push(loc); }
     groups[loc].push(items[i]);
   }
-  order.sort(function(a, b) { return a.localeCompare(b); });
+  order.sort(function(a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
 
   for (let g = 0; g < order.length; g++) {
     const loc = order[g];
@@ -3336,7 +3382,7 @@ function renderLabelsTab() {
       hdr.appendChild(hdrInfoBtn);
     }
     container.appendChild(hdr);
-    groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || ""); });
+    groups[loc].sort(function(a, b) { return (a.code || "").localeCompare(b.code || "", undefined, { numeric: true }); });
     for (let i = 0; i < groups[loc].length; i++) {
       container.appendChild(_wbItemRow(groups[loc][i]));
     }
