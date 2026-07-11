@@ -517,6 +517,117 @@ async function syncRooms() {
 }
 
 // ============================================================
+// LOCATIEFOTO'S — opslag klaar, nog geen UI
+// Een foto of tekening die de locatie van een kast visueel uitlegt.
+// Opslag: Google Drive via Code.gs (acties setPhoto/getPhoto/
+// deletePhoto); de kolom "photo" in de sheet bevat alleen het
+// Drive-bestand-ID. Deze functies worden nog nergens vanuit de
+// interface aangeroepen — ze staan klaar voor de toekomstige
+// foto-UI (foto maken → pijl/cirkel erop tekenen → uploaden).
+// Online-only: geen offline-wachtrij; bij geen verbinding gooien
+// de functies een fout die de UI als melding kan tonen.
+// ============================================================
+const PHOTO_MAX_DIMENSION = 1280;    // langste zijde na verkleinen (px)
+const PHOTO_JPEG_QUALITY = 0.72;     // eerste compressiepoging
+const PHOTO_MAX_BYTES = 900 * 1024;  // boven deze grootte: tweede poging op lagere kwaliteit
+
+// --- begin foto-helpers (pure functies, gedekt door tests/photo.test.js) ---
+
+// Is dit een geldige afbeelding-data-URL (jpeg/png/webp, base64)?
+function isPhotoDataUrl(str) {
+  if (typeof str !== "string") return false;
+  const m = str.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+\/]+={0,2})$/);
+  return !!m && m[1].length >= 4 && m[1].length % 4 === 0;
+}
+
+// Werkelijke bestandsgrootte in bytes van een base64-data-URL.
+function photoDataUrlBytes(str) {
+  const ix = typeof str === "string" ? str.indexOf(";base64,") : -1;
+  if (ix === -1) return 0;
+  const b64 = str.slice(ix + 8);
+  let padding = 0;
+  if (b64.slice(-2) === "==") padding = 2;
+  else if (b64.slice(-1) === "=") padding = 1;
+  return Math.max(0, Math.floor(b64.length / 4) * 3 - padding);
+}
+
+// --- einde foto-helpers ---
+
+// Foto (File/Blob van camera of galerij) verkleinen en comprimeren
+// naar een JPEG-data-URL die klein genoeg is om te uploaden.
+async function compressPhotoToDataUrl(fileOrBlob) {
+  const objectUrl = URL.createObjectURL(fileOrBlob);
+  try {
+    const img = await new Promise(function(resolve, reject) {
+      const im = new Image();
+      im.onload = function() { resolve(im); };
+      im.onerror = function() { reject(new Error("Afbeelding kon niet gelezen worden")); };
+      im.src = objectUrl;
+    });
+    const scale = Math.min(1, PHOTO_MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    let out = canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY);
+    if (photoDataUrlBytes(out) > PHOTO_MAX_BYTES) {
+      out = canvas.toDataURL("image/jpeg", 0.5);
+    }
+    return out;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+// Foto uploaden en aan een kast koppelen (vervangt bestaande foto).
+// Werkt het lokale record bij en schrijft naar het logboek.
+async function uploadLocationPhoto(id, dataUrl) {
+  if (!isPhotoDataUrl(dataUrl)) throw new Error("Ongeldige afbeelding");
+  const result = await sheetAction({ action: "setPhoto", id: id, image: dataUrl });
+  if (result && result.success) {
+    const ix = data.findIndex(function(d) { return d.id === id; });
+    if (ix !== -1) {
+      data[ix].photo = result.photo;
+      if (result.lastModified) data[ix].lastModified = result.lastModified;
+      saveLocal();
+      await logAction("Foto toegevoegd", data[ix].code || "", data[ix].location || "", "Logboek Bewerkingen");
+    }
+  }
+  return result;
+}
+
+// Foto van een kast ophalen als data-URL (null = geen foto).
+async function fetchLocationPhoto(id) {
+  if (!SCRIPT_URL) return null;
+  const resp = await fetchWithTimeout(
+    SCRIPT_URL + "?action=getPhoto&id=" + encodeURIComponent(id) +
+    "&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
+    30000
+  );
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error);
+  return json.image || null;
+}
+
+// Foto van een kast verwijderen (Drive-prullenbak + kolom leegmaken).
+async function removeLocationPhoto(id) {
+  const result = await sheetAction({ action: "deletePhoto", id: id });
+  if (result && result.success) {
+    const ix = data.findIndex(function(d) { return d.id === id; });
+    if (ix !== -1) {
+      data[ix].photo = "";
+      if (result.lastModified) data[ix].lastModified = result.lastModified;
+      saveLocal();
+      await logAction("Foto verwijderd", data[ix].code || "", data[ix].location || "", "Logboek Bewerkingen");
+    }
+  }
+  return result;
+}
+
+// ============================================================
 // INITIALISATIE
 // ============================================================
 async function init() {

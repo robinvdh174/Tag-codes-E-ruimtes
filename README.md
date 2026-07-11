@@ -11,6 +11,20 @@ Mobiele web-app voor Sappi om elektrische verdeelkasten te zoeken, beheren en de
 - Offline beschikbaar (PWA met Service Worker)
 - Audit-log van alle wijzigingen
 
+## Locatiefoto's (voorbereid, nog geen UI)
+
+Soms is een locatie moeilijk in woorden uit te leggen — een foto (eventueel met een pijl of cirkel erop getekend) zegt meer. De volledige opslaglaag hiervoor is gebouwd en staat klaar; er is bewust nog geen knop of weergave in de app. Zodra de UI gewenst is hoeft alleen nog de interface gebouwd te worden.
+
+**Hoe het werkt:**
+- Foto's worden opgeslagen in een Google Drive-map (`E-Kast Locatiefoto's`) van hetzelfde account als de spreadsheet — dus binnen de eigen omgeving, niet bij een externe dienst.
+- De kolom `photo` in het tabblad "Kasten" bevat alleen het Drive-bestand-ID. De foto zelf wordt via de API (achter de token) geserveerd; de bestanden staan niet publiek.
+- Backend-acties in `Code.gs`: `setPhoto` (upload, vervangt bestaande foto — één foto per kast), `getPhoto` (ophalen als data-URL), `deletePhoto` (naar Drive-prullenbak).
+- Klaarstaande functies in `app.js`: `compressPhotoToDataUrl` (verkleint naar max 1280 px JPEG vóór upload), `uploadLocationPhoto`, `fetchLocationPhoto`, `removeLocationPhoto`. Uploads en verwijderingen worden gelogd in "Logboek Bewerkingen".
+- Een tekening werkt via hetzelfde kanaal: een canvas (schets of pijl-op-foto) exporteert dezelfde soort data-URL.
+- Eerste versie is bewust online-only: geen offline-wachtrij voor foto's. `add`/`update` kunnen de foto-kolom nooit wissen — foto's worden uitsluitend via `setPhoto`/`deletePhoto` beheerd, dus ook oudere app-versies zijn veilig.
+
+**Let op bij herdeployen:** de foto-acties gebruiken `DriveApp`. Bij de eerstvolgende herdeploy van `Code.gs` vraagt Apps Script daarom eenmalig om extra Drive-toestemming.
+
 ## Tests draaien
 ```bash
 node tests/run.js

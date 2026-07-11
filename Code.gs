@@ -4,7 +4,16 @@
 
 var SPREADSHEET_ID = "1TZ18nMFeALPOjioHmFnaHFaTWqeRkupZcXbqEygzH5w";
 var SHEET_NAME = "Kasten";
-var HEADERS = ["id", "code", "location", "note", "position", "status", "added", "addedby", "statusBy", "statusDate", "lastModified"];
+var HEADERS = ["id", "code", "location", "note", "position", "status", "added", "addedby", "statusBy", "statusDate", "lastModified", "photo"];
+
+// Locatiefoto's: Drive-map waarin foto's/tekeningen bij kasten worden
+// bewaard. De kolom "photo" bevat alleen het Drive-bestand-ID; de foto
+// zelf wordt via getPhoto (achter de API-token) geserveerd en staat dus
+// niet publiek. Beheer loopt uitsluitend via setPhoto/deletePhoto —
+// add/update laten de kolom altijd ongemoeid, zodat oudere app-versies
+// die het veld niet kennen een bestaande foto nooit kunnen wissen.
+var PHOTO_FOLDER_NAME = "E-Kast Locatiefoto's";
+var PHOTO_MAX_BASE64 = 3200000; // ± 2,4 MB binair — de app comprimeert naar veel minder
 
 // Hernoem verouderde locatienamen bij het ophalen uit de sheet
 var LOCATION_RENAMES = { "Omvormerruimte": "OMVR B.", "Walsen Loods": "W.L. Oud" };
@@ -42,7 +51,7 @@ function getApiToken_() {
 // Acties die de sheet wijzigen. Deze draaien onder een script-lock zodat
 // twee toestellen die tegelijk schrijven elkaars rijen niet kunnen
 // verschuiven (deleteRow op een verschoven index = verkeerde rij weg).
-var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, blockDevice: 1, unblockDevice: 1 };
+var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, blockDevice: 1, unblockDevice: 1, setPhoto: 1, deletePhoto: 1 };
 
 function handleRequest_(params) {
   try {
@@ -83,6 +92,9 @@ function dispatch_(action, params) {
   if (action === "blockDevice")  return handleBlockDevice(params.deviceId, params.deviceName, params.blockedBy);
   if (action === "unblockDevice")return handleUnblockDevice(params.deviceId);
   if (action === "getDevices")   return handleGetDevices();
+  if (action === "setPhoto")     return handleSetPhoto(params);
+  if (action === "getPhoto")     return handleGetPhoto(params.id);
+  if (action === "deletePhoto")  return handleDeletePhoto(params.id);
   return { error: "Onbekende actie: " + action };
 }
 
@@ -141,7 +153,9 @@ function handleAdd(dataParam) {
   item.lastModified = newLM;
   var sheet = getOrCreateSheet();
   var row = HEADERS.map(function(h) {
-    return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
+    if (h === "status") return statusNaarSheet(item[h] || "");
+    if (h === "photo")  return ""; // foto's alleen via setPhoto koppelen
+    return item[h] || "";
   });
   sheet.appendRow(row);
   Logger.log("ADD: " + item.code + " toegevoegd");
@@ -181,8 +195,15 @@ function handleUpdate(dataParam) {
       var newLM = new Date().toISOString();
       item.lastModified = newLM;
       delete item.expectedLastModified;
+      // Foto-kolom altijd behouden: die wordt uitsluitend via
+      // setPhoto/deletePhoto beheerd. Zo kan een client die het veld
+      // niet kent (oudere app-versie) de foto niet per ongeluk wissen.
+      var photoCol = headers.indexOf("photo");
+      var existingPhoto = photoCol !== -1 ? cellToString(rows[i][photoCol]) : "";
       var newRow = HEADERS.map(function(h) {
-        return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
+        if (h === "status") return statusNaarSheet(item[h] || "");
+        if (h === "photo")  return existingPhoto;
+        return item[h] || "";
       });
       sheet.getRange(i + 1, 1, 1, HEADERS.length).setValues([newRow]);
       Logger.log("UPDATE: rij " + (i+1) + " bijgewerkt voor " + item.code);
@@ -416,6 +437,136 @@ function handleGetDevices() {
     }
   }
   return result;
+}
+
+// ----------------------------------------------------------
+// LOCATIEFOTO'S — foto of tekening bij een kast, opgeslagen in
+// Google Drive. Nog niet zichtbaar in de app; de acties staan
+// klaar voor de toekomstige foto-UI.
+//
+// LET OP: deze functies gebruiken DriveApp. Bij het herdeployen
+// vraagt Apps Script daarom eenmalig om extra Drive-toestemming.
+// ----------------------------------------------------------
+
+// Drive-map ophalen of aanmaken. Het map-ID wordt gecachet in
+// Script Properties (sleutel "PHOTO_FOLDER_ID") zodat we niet bij
+// elke upload heel Drive hoeven te doorzoeken.
+function getPhotoFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var cachedId = props.getProperty("PHOTO_FOLDER_ID");
+  if (cachedId) {
+    try { return DriveApp.getFolderById(cachedId); } catch (err) {
+      // Map verwijderd of ID ongeldig — hieronder opnieuw aanmaken
+    }
+  }
+  var it = DriveApp.getFoldersByName(PHOTO_FOLDER_NAME);
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder(PHOTO_FOLDER_NAME);
+  props.setProperty("PHOTO_FOLDER_ID", folder.getId());
+  return folder;
+}
+
+// Data-URL ("data:image/jpeg;base64,....") ontleden en valideren.
+// Alleen jpeg/png/webp; geeft null bij alles wat er niet uitziet
+// als een geldige afbeelding.
+function parsePhotoDataUrl_(image) {
+  if (typeof image !== "string") return null;
+  var m = image.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+\/]+={0,2})$/);
+  if (!m || m[2].length < 4 || m[2].length % 4 !== 0) return null;
+  return { mime: m[1], base64: m[2] };
+}
+
+// SETPHOTO: foto uploaden en aan een kast koppelen (vervangt een
+// eventuele bestaande foto — één foto per kast).
+function handleSetPhoto(params) {
+  if (!params.id) throw new Error("Geen id voor setPhoto");
+  var parsed = parsePhotoDataUrl_(params.image);
+  if (!parsed) throw new Error("Ongeldige afbeelding (verwacht base64 data-URL, jpeg/png/webp)");
+  if (parsed.base64.length > PHOTO_MAX_BASE64) throw new Error("Afbeelding te groot (max ±2 MB na compressie)");
+  var sheet = getOrCreateSheet();
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var idCol = headers.indexOf("id");
+  var codeCol = headers.indexOf("code");
+  var photoCol = headers.indexOf("photo");
+  var lmCol = headers.indexOf("lastModified");
+  if (photoCol === -1) throw new Error("Kolom 'photo' ontbreekt in de sheet");
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idCol]) === String(params.id)) {
+      var ext = parsed.mime === "image/png" ? "png" : (parsed.mime === "image/webp" ? "webp" : "jpg");
+      var stamp = Utilities.formatDate(new Date(), "Europe/Brussels", "yyyyMMdd-HHmmss");
+      var fileName = (cellToString(rows[i][codeCol]) || params.id) + "_" + stamp + "." + ext;
+      var blob = Utilities.newBlob(Utilities.base64Decode(parsed.base64), parsed.mime, fileName);
+      var file = getPhotoFolder_().createFile(blob);
+      // Oude foto naar de prullenbak (vervangen, niet stapelen)
+      var oldFileId = cellToString(rows[i][photoCol]);
+      if (oldFileId) {
+        try { DriveApp.getFileById(oldFileId).setTrashed(true); } catch (err) {
+          Logger.log("SETPHOTO: oude foto " + oldFileId + " niet gevonden (" + err.message + ")");
+        }
+      }
+      var newLM = new Date().toISOString();
+      sheet.getRange(i + 1, photoCol + 1).setValue(file.getId());
+      if (lmCol !== -1) sheet.getRange(i + 1, lmCol + 1).setValue(newLM);
+      Logger.log("SETPHOTO: " + fileName + " (" + file.getId() + ") gekoppeld aan id=" + params.id);
+      return { success: true, action: "setPhoto", id: params.id, photo: file.getId(), lastModified: newLM };
+    }
+  }
+  throw new Error("ID niet gevonden voor setPhoto: " + params.id);
+}
+
+// GETPHOTO: foto van een kast ophalen als base64 data-URL. Loopt via
+// de API (met token) zodat de Drive-bestanden zelf privé blijven.
+function handleGetPhoto(id) {
+  if (!id) throw new Error("Geen id voor getPhoto");
+  var sheet = getOrCreateSheet();
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var idCol = headers.indexOf("id");
+  var photoCol = headers.indexOf("photo");
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idCol]) === String(id)) {
+      var fileId = photoCol !== -1 ? cellToString(rows[i][photoCol]) : "";
+      if (!fileId) return { id: id, photo: "", image: null };
+      try {
+        var blob = DriveApp.getFileById(fileId).getBlob();
+        var mime = blob.getContentType() || "image/jpeg";
+        return { id: id, photo: fileId, image: "data:" + mime + ";base64," + Utilities.base64Encode(blob.getBytes()) };
+      } catch (err) {
+        // Bestand handmatig verwijderd uit Drive — behandelen als "geen foto"
+        Logger.log("GETPHOTO: bestand " + fileId + " onbereikbaar (" + err.message + ")");
+        return { id: id, photo: "", image: null };
+      }
+    }
+  }
+  throw new Error("ID niet gevonden voor getPhoto: " + id);
+}
+
+// DELETEPHOTO: foto loskoppelen en naar de Drive-prullenbak.
+function handleDeletePhoto(id) {
+  if (!id) throw new Error("Geen id voor deletePhoto");
+  var sheet = getOrCreateSheet();
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var idCol = headers.indexOf("id");
+  var photoCol = headers.indexOf("photo");
+  var lmCol = headers.indexOf("lastModified");
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idCol]) === String(id)) {
+      var fileId = photoCol !== -1 ? cellToString(rows[i][photoCol]) : "";
+      if (fileId) {
+        try { DriveApp.getFileById(fileId).setTrashed(true); } catch (err) {
+          Logger.log("DELETEPHOTO: bestand " + fileId + " niet gevonden (" + err.message + ")");
+        }
+        var newLM = new Date().toISOString();
+        sheet.getRange(i + 1, photoCol + 1).setValue("");
+        if (lmCol !== -1) sheet.getRange(i + 1, lmCol + 1).setValue(newLM);
+        Logger.log("DELETEPHOTO: foto losgekoppeld van id=" + id);
+        return { success: true, action: "deletePhoto", id: id, lastModified: newLM };
+      }
+      return { success: true, action: "deletePhoto", id: id, existing: false };
+    }
+  }
+  throw new Error("ID niet gevonden voor deletePhoto: " + id);
 }
 
 function makeResponse(data) {
