@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; script-src-elem 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; script-src-elem 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob:; manifest-src 'self'; base-uri 'self'; form-action 'none';">
 <title>E-Kast Zoeker</title>
+<meta name="description" content="E-Kast Zoeker — elektrische verdeelkasten zoeken, beheren en status bijhouden. Technische Dienst Sappi.">
+<meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://script.google.com" crossorigin>
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <!-- Tesseract.js wordt lazy-geladen vanuit ./vendor/tesseract/ — geen externe CDN. -->
@@ -14,6 +16,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="ekast-icon.svg">
 <meta name="apple-mobile-web-app-title" content="E-Kast">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#f0a500">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -21,6 +24,12 @@
 </head>
 <body>
 
+<noscript>
+  <div style="padding:2rem;text-align:center;color:#dde3f0;background:#0d0f12;font-family:sans-serif;">
+    <strong>JavaScript is vereist.</strong><br>
+    Schakel JavaScript in om de E-Kast Zoeker te gebruiken.
+  </div>
+</noscript>
 
 <header>
   <div class="header-row">
@@ -67,7 +76,7 @@
   <div id="tab-search" class="panel active" role="tabpanel" aria-labelledby="tbtn-search">
     <div class="search-bar-wrap" style="margin-top:.5rem">
       <span class="search-bar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten" maxlength="80">
+      <input type="text" id="searchInput" placeholder="Typ kastnummer, tag-code of ruimte..." autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Zoek kasten" maxlength="80" enterkeyhint="search">
       <button type="button" class="search-bar-clear" id="btnSearchClear" aria-label="Zoekopdracht wissen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       <div class="search-bar-divider" aria-hidden="true"></div>
       <button type="button" class="search-bar-cam" id="btnScanCam" aria-label="Bon scannen met camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
@@ -159,9 +168,9 @@
 </div>
 
 <!-- Bon-scan modal -->
-<div class="modal-overlay" id="scanModal">
+<div class="modal-overlay" id="scanModal" role="dialog" aria-modal="true" aria-labelledby="scanModalTitle">
   <div class="modal" style="max-width:380px;">
-    <div class="modal-title">&#128247; Bon scannen</div>
+    <div class="modal-title" id="scanModalTitle">&#128247; Bon scannen</div>
     <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="position:absolute;left:-9999px;top:-9999px;">
     <div id="scanInitial">
       <p class="scan-help">Maak een foto van de bon. De app leest de tag-code automatisch en gooit de foto daarna weg &mdash; ze wordt nergens bewaard.</p>
@@ -179,9 +188,9 @@
 </div>
 
 <!-- Bewerk modal -->
-<div class="modal-overlay" id="editModal">
+<div class="modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
   <div class="modal">
-    <div class="modal-title">Kast bewerken</div>
+    <div class="modal-title" id="editModalTitle">Kast bewerken</div>
     <input type="hidden" id="editId">
     <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off" maxlength="50"></div>
     <div class="form-group"><label>Locatie</label>
@@ -224,9 +233,9 @@
 </div>
 
 <!-- Ruimte toevoegen modal -->
-<div class="modal-overlay" id="addRoomModal" role="dialog" aria-modal="true">
+<div class="modal-overlay" id="addRoomModal" role="dialog" aria-modal="true" aria-labelledby="addRoomModalTitle">
   <div class="modal">
-    <div class="modal-title">Ruimte / Locatie toevoegen</div>
+    <div class="modal-title" id="addRoomModalTitle">Ruimte / Locatie toevoegen</div>
     <div class="form-group">
       <label>Naam van de ruimte</label>
       <input type="text" id="newRoomName" placeholder="bv. Machinekamer Noord" autocomplete="off" maxlength="50">
@@ -244,7 +253,7 @@
 
 <button type="button" class="btn-scroll-top" id="btnScrollTop" aria-label="Terug naar boven" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Bevestiging modal (vervangt browser confirm) -->
 <div class="status-popup" id="confirmOverlay">
@@ -266,7 +275,7 @@
     <div class="status-popup-title" id="statusNaamTitel">Registreer statuswijziging</div>
     <div class="form-group">
       <label>Jouw naam</label>
-      <input type="text" id="statusNaamInput" placeholder="Naam" autocomplete="off">
+      <input type="text" id="statusNaamInput" placeholder="Naam" autocomplete="off" maxlength="50">
     </div>
     <div class="form-group" style="margin-top:.7rem;">
       <label>Datum</label>
