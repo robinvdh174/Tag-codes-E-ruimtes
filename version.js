@@ -2,4 +2,4 @@
 // (via <script>) als door sw.js (via importScripts) zodat CACHE_NAME
 // en APP_VERSION nooit uit de pas kunnen lopen.
 // Bump dit bij elke release.
-const APP_VERSION = "v37";
+const APP_VERSION = "v38";

@@ -190,12 +190,18 @@ function saveQueue(queue) {
 }
 
 function enqueue(action, itemData, logInfo) {
-  const queue = getQueue();
+  let queue = getQueue();
   const itemId = itemData.id;
   if (action === "delete") {
-    const addIdx = queue.findIndex(function(q) { return q.action === "add" && q.data.id === itemId; });
-    if (addIdx !== -1) {
-      queue.splice(addIdx, 1);
+    // Alle wachtende schrijfacties voor dit record uit de queue halen:
+    // een update ná een delete faalt gegarandeerd op de server ("ID niet
+    // gevonden") en zou de queue 10 retry-rondes lang blokkeren.
+    const hadPendingAdd = queue.some(function(q) { return q.action === "add" && q.data && q.data.id === itemId; });
+    queue = queue.filter(function(q) {
+      return !((q.action === "add" || q.action === "update") && q.data && q.data.id === itemId);
+    });
+    if (hadPendingAdd) {
+      // Record heeft de server nooit bereikt — delete hoeft ook niet meer.
       saveQueue(queue);
       updatePendingBadge();
       return;
@@ -295,7 +301,7 @@ async function processQueue() {
         entry.retries = (entry.retries || 0) + 1;
         if (entry.retries > 10) {
           dequeue(entry.queueId);
-          showToast("Sync definitief mislukt: " + entry.action + " " + (entry.data.code || entry.data.id), true);
+          showToast("Sync definitief mislukt: " + entry.action + " " + (entry.data.code || entry.data.name || entry.data.id || ""), true);
         } else {
           saveQueue(getQueue().map(function(q) {
             return q.queueId === entry.queueId ? entry : q;
@@ -551,13 +557,15 @@ async function init() {
         // Volgorde van bovenste-eerst: het meest recent geopende modal sluit
         // het eerst. confirmOverlay/statusNaamOverlay/statusPopup zijn altijd
         // bovenop andere modals te openen, dus die eerst.
-        if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
+        if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
+        else if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
         // Conflict-dialoog forceert een keuze; Escape = "mijn versie bewaren"
         // (veiligste default, dialoog komt bij de volgende sync vanzelf terug).
         else if (document.getElementById("conflictOverlay").classList.contains("open")) { resolveConflict("mine"); }
+        else if (document.getElementById("devicesModal").classList.contains("open")) { closeDevicesModal(); }
         else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
         else if (document.getElementById("addRoomModal").classList.contains("open")) { closeAddRoomModal(); }
         else if (document.getElementById("scanModal").classList.contains("open")) { closeScan(); }
@@ -890,6 +898,10 @@ function doSearch(value) {
   _searchTimer = setTimeout(function() { _doSearchNow(value); }, 150);
 }
 function _doSearchNow(value) {
+  // Eventueel nog lopende debounce-timer annuleren: wie direct rendert
+  // (wisknop, chips) wil niet dat een 150ms later afgaande timer de
+  // zojuist getoonde resultaten weer overschrijft met een oude zoekterm.
+  clearTimeout(_searchTimer);
   const raw = String(value == null ? "" : value).trim();
   const countEl = document.getElementById("resultCount");
   const container = document.getElementById("searchResults");
@@ -1933,12 +1945,15 @@ function showPinSetup() {
     "<div class='form-group'><label>Naam van dit toestel</label>" +
     "<input type='text' id='setupDevice' placeholder='bv. GSM Dag' autocomplete='off'></div>" +
     "<div class='form-group'><label>PIN</label>" +
-    "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='off'></div>" +
+    "<input type='password' class='pin-input' id='setupPin' placeholder='••••' maxlength='" + DEVICE_PIN_LENGTH + "' inputmode='numeric' autocomplete='off'></div>" +
     "<div class='pin-error' id='pinErr'></div>" +
     "<button class='btn-primary' type='button' id='setupPinBtn'>Bevestigen</button>" +
     "</div>";
   document.getElementById("setupPinBtn").addEventListener("click", savePin);
+  _bindEnterSubmit(document.getElementById("setupDevice"), savePin);
+  _bindEnterSubmit(document.getElementById("setupPin"), savePin);
   ov.classList.add("open");
+  setTimeout(function() { const el = document.getElementById("setupDevice"); if (el) el.focus(); }, 150);
 }
 
 async function savePin() {
@@ -1964,7 +1979,7 @@ function showPinEnter() {
   ov.innerHTML =
     "<div class='pin-title'>E-KAST ZOEKER</div>" +
     "<div class='pin-sub'>" + esc(device) + "<br>Voer je PIN in.</div>" +
-    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='4' inputmode='numeric' autocomplete='new-password'>" +
+    "<input type='password' class='pin-input' id='pinInput' placeholder='••••' maxlength='" + DEVICE_PIN_LENGTH + "' inputmode='numeric' autocomplete='new-password'>" +
     "<div class='pin-error' id='pinErr'></div>";
   document.getElementById("pinInput").addEventListener("input", verifyPin);
   ov.classList.add("open");
