@@ -130,18 +130,18 @@
       <p style="margin-top:.5rem">Wijzigingen worden lokaal opgeslagen maar niet gesynchroniseerd. Stel de <code>SCRIPT_URL</code> in bovenaan <code>app.js</code> om sync te activeren.</p>
     </div>
 
-    <div class="form-group"><label>Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="50"></div>
-    <div class="form-group"><label>Ruimte / Locatie</label>
+    <div class="form-group"><label for="newCode">Kastnummer / Tag-code <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label><input type="text" id="newCode" placeholder="bv. 106F03v1.p1-m1" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="50"></div>
+    <div class="form-group"><label for="newLocation">Ruimte / Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="newLocation" placeholder="bv. Stofkisten Gang" autocomplete="off" maxlength="50">
         <button class="btn-room-pick" id="btnRoomDrop1" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop1"></div>
       </div>
     </div>
-    <div class="form-group"><label>Positie in ruimte (optioneel)</label>
+    <div class="form-group"><label for="newPosition">Positie in ruimte (optioneel)</label>
       <input type="text" id="newPosition" placeholder="bv. 7/5 of linkerwand achteraan" autocomplete="off" maxlength="100">
     </div>
-    <div class="form-group"><label>Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..." maxlength="500"></textarea></div>
+    <div class="form-group"><label for="newNote">Component (optioneel)</label><textarea id="newNote" placeholder="bv. motor, pomp, ventilator..." maxlength="500"></textarea></div>
     <button class="btn-primary" id="btnAdd">OPSLAAN</button>
   </div>
 </main>
@@ -192,16 +192,16 @@
   <div class="modal">
     <div class="modal-title" id="editModalTitle">Kast bewerken</div>
     <input type="hidden" id="editId">
-    <div class="form-group"><label>Code</label><input type="text" id="editCode" autocomplete="off" maxlength="50"></div>
-    <div class="form-group"><label>Locatie</label>
+    <div class="form-group"><label for="editCode">Code</label><input type="text" id="editCode" autocomplete="off" maxlength="50"></div>
+    <div class="form-group"><label for="editLocation">Locatie</label>
       <div class="input-with-btn" style="position:relative;">
         <input type="text" id="editLocation" autocomplete="off" maxlength="50">
         <button class="btn-room-pick" id="btnRoomDrop2" type="button">&#9660;</button>
         <div class="room-dropdown" id="roomDrop2"></div>
       </div>
     </div>
-    <div class="form-group"><label>Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan" maxlength="100"></div>
-    <div class="form-group"><label>Component</label><textarea id="editNote" maxlength="500"></textarea></div>
+    <div class="form-group"><label for="editPosition">Positie in ruimte</label><input type="text" id="editPosition" autocomplete="off" placeholder="bv. 7/5 of linkerwand achteraan" maxlength="100"></div>
+    <div class="form-group"><label for="editNote">Component</label><textarea id="editNote" maxlength="500"></textarea></div>
     <div class="modal-btns">
       <button class="btn-cancel" id="btnEditCancel" type="button">Annuleren</button>
       <button class="btn-primary" id="btnSaveEdit" style="margin-top:0" type="button">Opslaan</button>
@@ -237,11 +237,11 @@
   <div class="modal">
     <div class="modal-title" id="addRoomModalTitle">Ruimte / Locatie toevoegen</div>
     <div class="form-group">
-      <label>Naam van de ruimte</label>
+      <label for="newRoomName">Naam van de ruimte</label>
       <input type="text" id="newRoomName" placeholder="bv. Machinekamer Noord" autocomplete="off" maxlength="50">
     </div>
     <div class="form-group">
-      <label>Beschrijving <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label>
+      <label for="newRoomDesc">Beschrijving <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label>
       <input type="text" id="newRoomDesc" placeholder="bv. gelijkvloers, links van de ingang" autocomplete="off" maxlength="100">
     </div>
     <div class="modal-btns">
@@ -274,11 +274,11 @@
   <div class="status-naam-card">
     <div class="status-popup-title" id="statusNaamTitel">Registreer statuswijziging</div>
     <div class="form-group">
-      <label>Jouw naam</label>
+      <label for="statusNaamInput">Jouw naam</label>
       <input type="text" id="statusNaamInput" placeholder="Naam" autocomplete="off" maxlength="50">
     </div>
     <div class="form-group" style="margin-top:.7rem;">
-      <label>Datum</label>
+      <label for="statusDatumInput">Datum</label>
       <input type="date" id="statusDatumInput">
     </div>
     <div class="status-naam-error" id="statusNaamError"></div>
