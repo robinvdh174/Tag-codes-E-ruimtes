@@ -709,6 +709,7 @@ function _appendGroupedByRoom(frag, items) {
       infoBtn.className = "btn-info-loc";
       infoBtn.type = "button";
       infoBtn.title = "Waar is dit?";
+      infoBtn.setAttribute("aria-label", "Waar is dit? — " + loc);
       infoBtn.textContent = "ⓘ";
       (function(l) {
         infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
@@ -1066,6 +1067,7 @@ function makeCard(item) {
     infoBtn.className = "btn-info-loc";
     infoBtn.type = "button";
     infoBtn.title = "Waar is dit?";
+    infoBtn.setAttribute("aria-label", "Waar is dit? — " + item.location);
     infoBtn.textContent = "\u24D8"; // ⓘ
     infoBtn.addEventListener("click", function(e) {
       e.stopPropagation();
@@ -1682,12 +1684,24 @@ function attachHoldListeners(btn, id) {
     if (bar && !reduceMotion) { bar.style.transition = "none"; bar.style.width = "0%"; }
     if (holdTimers[id]) { clearTimeout(holdTimers[id]); delete holdTimers[id]; }
   }
+  function keyStart(e) {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+    if (e.repeat) return; // OS key-repeat mag de timer niet steeds herstarten
+    start(e);
+  }
+  function keyStop(e) {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+    stop();
+  }
   btn.addEventListener("mousedown", start);
   btn.addEventListener("touchstart", start, {passive: false});
   btn.addEventListener("mouseup", stop);
   btn.addEventListener("mouseleave", stop);
   btn.addEventListener("touchend", stop);
   btn.addEventListener("touchcancel", stop);
+  btn.addEventListener("keydown", keyStart);
+  btn.addEventListener("keyup", keyStop);
+  btn.addEventListener("blur", stop);
 }
 
 // ============================================================
@@ -3346,6 +3360,7 @@ function renderLabelsTab() {
       hdrInfoBtn.className = "btn-info-loc";
       hdrInfoBtn.type = "button";
       hdrInfoBtn.title = "Waar is dit?";
+      hdrInfoBtn.setAttribute("aria-label", "Waar is dit? — " + loc);
       hdrInfoBtn.textContent = "ⓘ";
       (function(l) {
         hdrInfoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
