@@ -7,8 +7,12 @@ const ASSETS = [
   "./version.js",
   "./manifest.json",
   "./ekast-icon.svg",
+  "./ekast-icon-maskable.svg",
   "./apple-touch-icon.png",
-  "./icon-512.png"
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-192.png",
+  "./icon-maskable-512.png"
 ];
 // Tesseract.js assets worden NIET in de install-precache geplaatst
 // (zou de install met ~16 MB belasten en op trage netwerken laten
