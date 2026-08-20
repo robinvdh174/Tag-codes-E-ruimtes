@@ -228,6 +228,39 @@
     <div id="devicesList"></div>
     <div class="modal-btns" style="margin-top:1.2rem;">
       <button class="btn-cancel" type="button" id="devicesCloseBtn">&larr; Sluiten</button>
+      <button class="btn-primary" type="button" id="manageRoomsBtn" style="margin-top:0;">Ruimtes beheren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ruimtes beheren modal (beheerder) -->
+<div class="modal-overlay" id="roomsModal" role="dialog" aria-modal="true" aria-labelledby="roomsModalTitle">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title" id="roomsModalTitle">Ruimtes beheren</div>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Wijzig de naam of de beschrijving van een ruimte. Een naamswijziging past ook alle kasten in die ruimte automatisch aan.</p>
+    <div id="roomsList"></div>
+    <div class="modal-btns" style="margin-top:1.2rem;">
+      <button class="btn-cancel" type="button" id="roomsCloseBtn">&larr; Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ruimte bewerken modal (beheerder) -->
+<div class="modal-overlay" id="editRoomModal" role="dialog" aria-modal="true" aria-labelledby="editRoomModalTitle">
+  <div class="modal">
+    <div class="modal-title" id="editRoomModalTitle">Ruimte bewerken</div>
+    <div class="form-group">
+      <label for="editRoomName">Naam van de ruimte</label>
+      <input type="text" id="editRoomName" placeholder="bv. Machinekamer Noord" autocomplete="off" maxlength="50">
+    </div>
+    <div class="form-group">
+      <label for="editRoomDesc">Beschrijving <span style="color:var(--muted);font-weight:400;">(optioneel)</span></label>
+      <input type="text" id="editRoomDesc" placeholder="bv. gelijkvloers, links van de ingang" autocomplete="off" maxlength="100">
+    </div>
+    <div class="pin-error" id="editRoomErr" style="min-height:1em;"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="editRoomCancelBtn" type="button">Annuleren</button>
+      <button class="btn-primary" id="editRoomSaveBtn" style="margin-top:0" type="button">Opslaan</button>
     </div>
   </div>
 </div>

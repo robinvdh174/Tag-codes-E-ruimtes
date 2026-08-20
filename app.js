@@ -50,14 +50,32 @@ const ROOM_INFO = {
   "NICO-O":            "Gelijkvloers, links van Nico (AZ) trapje omhoog"
 };
 
-// Laad eerder toegevoegde custom ruimtes uit localStorage en voeg toe aan ROOM_INFO
+// Laad eerder toegevoegde/aangepaste ruimtes uit localStorage en voeg toe
+// aan ROOM_INFO. Opgeslagen waarden gaan vóór op de ingebouwde defaults,
+// zodat een via het beheer aangepaste beschrijving ook na een reload
+// meteen zichtbaar is (de server is de bron van waarheid bij edits).
 (function loadCustomRooms() {
   try {
     const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
     Object.keys(stored).forEach(function(name) {
-      if (!ROOM_INFO.hasOwnProperty(name)) ROOM_INFO[name] = stored[name];
+      ROOM_INFO[name] = stored[name];
     });
   } catch(e) { console.warn("Custom ruimtes laden mislukt:", e); }
+})();
+
+// Lokaal bekende hernoemingen (oud -> nieuw) toepassen: ruim de oude
+// ingebouwde/custom naam op zodat een hernoemde ruimte na een reload niet
+// dubbel in de lijst verschijnt vóórdat syncRooms de server heeft geraadpleegd.
+(function applyStoredRoomRenames() {
+  try {
+    const renames = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
+    Object.keys(renames).forEach(function(oldName) {
+      const newName = renames[oldName];
+      if (newName && oldName !== newName && ROOM_INFO.hasOwnProperty(oldName)) {
+        delete ROOM_INFO[oldName];
+      }
+    });
+  } catch(e) { console.warn("Ruimte-hernoemingen laden mislukt:", e); }
 })();
 
 // ============================================================
@@ -144,6 +162,14 @@ try {
 // Hernoem verouderde locatienamen in geladen data
 (function migrateLocationNames() {
   const renames = { "Omvormerruimte": "OMVR B.", "Walsen Loods": "W.L. Oud" };
+  // Vul aan met de via het beheer doorgevoerde hernoemingen (oud -> nieuw)
+  // zodat lokaal gecachete kasten mee de nieuwe ruimtenaam krijgen.
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
+    Object.keys(stored).forEach(function(oldName) {
+      if (stored[oldName]) renames[oldName] = stored[oldName];
+    });
+  } catch(e) { console.warn("Ruimte-hernoemingen (migratie) laden mislukt:", e); }
   let changed = false;
   data.forEach(function(item) {
     if (renames[item.location]) { item.location = renames[item.location]; changed = true; }
@@ -226,6 +252,21 @@ function enqueue(action, itemData, logInfo) {
       return;
     }
   }
+  if (action === "updateRoom") {
+    // Meerdere edits van dezelfde ruimte (herkend aan de nieuwe naam, of aan
+    // een eerdere edit waarvan de nieuwe naam nu de oude is) samenvouwen tot
+    // één wachtende actie, zodat de keten oud -> nieuw behouden blijft.
+    const existIdx = queue.findIndex(function(q) {
+      return q.action === "updateRoom" && q.data &&
+        (q.data.newName === itemData.oldName || q.data.newName === itemData.newName);
+    });
+    if (existIdx !== -1) {
+      queue[existIdx].data = { oldName: queue[existIdx].data.oldName, newName: itemData.newName, desc: itemData.desc };
+      queue[existIdx].timestamp = Date.now();
+      saveQueue(queue);
+      return;
+    }
+  }
   queue.push({
     queueId: newId(),
     action: action,
@@ -290,6 +331,8 @@ async function processQueue() {
           await sheetAction({ action: "delete", id: entry.data.id });
         } else if (entry.action === "addRoom") {
           await sheetAction({ action: "addRoom", name: entry.data.name, desc: entry.data.desc || "" });
+        } else if (entry.action === "updateRoom") {
+          await sheetAction({ action: "updateRoom", oldName: entry.data.oldName, newName: entry.data.newName, desc: entry.data.desc || "" });
         }
         dequeue(entry.queueId);
         if (entry.action === "add") {
@@ -508,18 +551,78 @@ async function syncRooms() {
     if (!resp || !resp.ok) return;
     const rooms = await resp.json();
     if (!Array.isArray(rooms)) return;
+    let listChanged = false;
     rooms.forEach(function(r) {
-      if (!r.name || ROOM_INFO.hasOwnProperty(r.name)) return;
-      ROOM_INFO[r.name] = r.desc || "";
+      if (!r.name) return;
+      // Een hernoemde ruimte (server bewaart de oude naam in renamedFrom):
+      // ruim de oude naam lokaal op en migreer kasten + actieve filter.
+      const from = (r.renamedFrom || "").trim();
+      if (from && from !== r.name) {
+        if (applyRoomRename(from, r.name)) listChanged = true;
+      }
+      // Beschrijving overnemen van de server (bron van waarheid bij edits),
+      // ook voor ingebouwde ruimtes waarvan de omschrijving is aangepast.
+      if (ROOM_INFO[r.name] !== (r.desc || "")) {
+        ROOM_INFO[r.name] = r.desc || "";
+        listChanged = true;
+      }
       try {
         const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
         stored[r.name] = r.desc || "";
         localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
       } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
     });
+    // Staat het beheer-overzicht open, dan meteen verversen.
+    if (listChanged) {
+      const rm = document.getElementById("roomsModal");
+      if (rm && rm.classList.contains("open")) renderRoomsList();
+    }
   } catch(e) {
     console.warn("syncRooms mislukt:", e);
   }
+}
+
+// Verwerk een hernoeming lokaal: verwijder de oude naam uit ROOM_INFO en
+// de localStorage-cache, migreer alle kasten met die locatie naar de
+// nieuwe naam, verplaats het actieve filter mee en onthoud de hernoeming
+// zodat ook een offline reload de oude naam niet terugbrengt.
+// Geeft true terug als er lokaal iets veranderde.
+function applyRoomRename(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return false;
+  let changed = false;
+
+  if (ROOM_INFO.hasOwnProperty(oldName)) { delete ROOM_INFO[oldName]; changed = true; }
+
+  // localStorage-cache van ruimtes bijwerken.
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    if (stored.hasOwnProperty(oldName)) {
+      delete stored[oldName];
+      localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+    }
+  } catch(e) { console.warn("Cache bijwerken bij hernoemen mislukt:", e); }
+
+  // Hernoeming onthouden (oud -> nieuw) voor toekomstige reloads.
+  try {
+    const renames = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
+    if (renames[oldName] !== newName) {
+      renames[oldName] = newName;
+      localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
+    }
+  } catch(e) { console.warn("Hernoeming onthouden mislukt:", e); }
+
+  // Lokale kasten met de oude locatie meenemen naar de nieuwe naam.
+  let dataChanged = false;
+  data.forEach(function(item) {
+    if (item.location === oldName) { item.location = newName; dataChanged = true; }
+  });
+  if (dataChanged) { saveLocal(); changed = true; }
+
+  // Actief filter mee verplaatsen zodat de gebruiker niet op een lege,
+  // verdwenen ruimte blijft staan.
+  if (activeRoom === oldName) { activeRoom = newName; changed = true; }
+
+  return changed;
 }
 
 // ============================================================
@@ -565,6 +668,8 @@ async function init() {
         // Conflict-dialoog forceert een keuze; Escape = "mijn versie bewaren"
         // (veiligste default, dialoog komt bij de volgende sync vanzelf terug).
         else if (document.getElementById("conflictOverlay").classList.contains("open")) { resolveConflict("mine"); }
+        else if (document.getElementById("editRoomModal").classList.contains("open")) { closeEditRoomModal(); }
+        else if (document.getElementById("roomsModal").classList.contains("open")) { closeRoomsModal(); }
         else if (document.getElementById("devicesModal").classList.contains("open")) { closeDevicesModal(); }
         else if (document.getElementById("editModal").classList.contains("open")) { closeModal(); }
         else if (document.getElementById("addRoomModal").classList.contains("open")) { closeAddRoomModal(); }
@@ -1803,6 +1908,154 @@ function showRoomInfo(loc) {
 function closeInfoPopup() {
   document.getElementById("infoPopupOverlay").classList.remove("open");
   clearTimeout(window._roomToast);
+}
+
+// ============================================================
+// RUIMTES BEHEREN — beheerder kan naam/beschrijving wijzigen
+// (bereikbaar via de beheer-modal, achter de beheerderscode)
+// ============================================================
+function openRoomsModal() {
+  const modal = document.getElementById("roomsModal");
+  if (!modal) return;
+  modal.classList.add("open");
+  renderRoomsList();
+  // Vers ophalen zodat de lijst overeenkomt met wat andere toestellen zien.
+  syncRooms();
+}
+
+function closeRoomsModal() {
+  const modal = document.getElementById("roomsModal");
+  if (modal) modal.classList.remove("open");
+}
+
+function renderRoomsList() {
+  const container = document.getElementById("roomsList");
+  if (!container) return;
+  const names = Object.keys(ROOM_INFO).sort(function(a, b) {
+    return a.toLowerCase().localeCompare(b.toLowerCase(), "nl");
+  });
+  container.innerHTML = "";
+  if (names.length === 0) {
+    container.innerHTML = "<div style='color:var(--muted);text-align:center;padding:2rem;'>Nog geen ruimtes.</div>";
+    return;
+  }
+  names.forEach(function(name) {
+    const item = document.createElement("div");
+    item.className = "device-item";
+
+    const info = document.createElement("div");
+    info.className = "device-info";
+
+    const nm = document.createElement("div");
+    nm.className = "device-name";
+    nm.textContent = name;
+
+    const meta = document.createElement("div");
+    meta.className = "device-id";
+    const desc = (ROOM_INFO[name] || "").trim();
+    meta.textContent = desc || "(geen beschrijving)";
+
+    info.appendChild(nm);
+    info.appendChild(meta);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "device-btn";
+    btn.textContent = "Bewerken";
+    btn.setAttribute("aria-label", "Ruimte \"" + name + "\" bewerken");
+    btn.onclick = function() { openEditRoomModal(name); };
+
+    item.appendChild(info);
+    item.appendChild(btn);
+    container.appendChild(item);
+  });
+}
+
+// De ruimte die op dit moment bewerkt wordt (oorspronkelijke naam).
+let _editRoomOriginalName = null;
+
+function openEditRoomModal(name) {
+  _editRoomOriginalName = name;
+  const nameInp = document.getElementById("editRoomName");
+  const descInp = document.getElementById("editRoomDesc");
+  const err = document.getElementById("editRoomErr");
+  if (err) err.textContent = "";
+  nameInp.value = name;
+  descInp.value = ROOM_INFO[name] || "";
+  document.getElementById("editRoomModal").classList.add("open");
+  _bindEnterSubmit(nameInp, saveEditRoom);
+  _bindEnterSubmit(descInp, saveEditRoom);
+  setTimeout(function() { nameInp.focus(); }, 100);
+}
+
+function closeEditRoomModal() {
+  document.getElementById("editRoomModal").classList.remove("open");
+  _editRoomOriginalName = null;
+}
+
+async function saveEditRoom() {
+  const oldName = _editRoomOriginalName;
+  if (!oldName) return;
+  const err = document.getElementById("editRoomErr");
+  const newName = document.getElementById("editRoomName").value.trim();
+  const desc = document.getElementById("editRoomDesc").value.trim();
+  if (err) err.textContent = "";
+
+  if (!newName) {
+    if (err) err.textContent = "Geef een naam op voor de ruimte.";
+    return;
+  }
+  const renamed = (newName !== oldName);
+  // Bij een naamswijziging: controleer of de nieuwe naam (case-insensitief)
+  // niet al door een andere ruimte gebruikt wordt.
+  if (renamed) {
+    const clash = findRoom(newName);
+    if (clash && clash !== oldName) {
+      if (err) err.textContent = "Er bestaat al een ruimte met die naam.";
+      return;
+    }
+  }
+
+  // Niets gewijzigd? Gewoon sluiten.
+  if (!renamed && desc === (ROOM_INFO[oldName] || "")) {
+    closeEditRoomModal();
+    return;
+  }
+
+  // Lokaal toepassen.
+  if (renamed) {
+    applyRoomRename(oldName, newName);
+  }
+  ROOM_INFO[newName] = desc;
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    stored[newName] = desc;
+    localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+  } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
+
+  closeEditRoomModal();
+  renderRoomsList();
+  renderList();
+  showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
+
+  // Naar de server sturen; bij netwerkfout in de offline-queue plaatsen.
+  if (SCRIPT_URL) {
+    const payload = { oldName: oldName, newName: newName, desc: desc };
+    try {
+      const res = await sheetAction(Object.assign({ action: "updateRoom" }, payload));
+      if (res && res.error) {
+        showToast("Server: " + res.error, true);
+      } else {
+        await logAction(
+          renamed ? ("Ruimte hernoemd: " + oldName + " -> " + newName) : ("Ruimte-beschrijving gewijzigd: " + newName),
+          "", newName, "Logboek"
+        );
+      }
+    } catch(e) {
+      console.warn("Ruimte-update sync mislukt, in queue gezet:", e);
+      enqueue("updateRoom", payload);
+    }
+  }
 }
 
 // ============================================================
@@ -3748,6 +4001,14 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
 
   closeOnOutsideClick("devicesModal", ".modal", closeDevicesModal);
   on("devicesCloseBtn", "click", closeDevicesModal);
+  on("manageRoomsBtn", "click", openRoomsModal);
+
+  closeOnOutsideClick("roomsModal", ".modal", closeRoomsModal);
+  on("roomsCloseBtn", "click", closeRoomsModal);
+
+  closeOnOutsideClick("editRoomModal", ".modal", closeEditRoomModal);
+  on("editRoomCancelBtn", "click", closeEditRoomModal);
+  on("editRoomSaveBtn", "click", saveEditRoom);
 
   closeOnOutsideClick("addRoomModal", ".modal", closeAddRoomModal);
   on("addRoomCancelBtn", "click", closeAddRoomModal);

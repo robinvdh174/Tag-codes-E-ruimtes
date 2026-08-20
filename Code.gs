@@ -42,7 +42,7 @@ function getApiToken_() {
 // Acties die de sheet wijzigen. Deze draaien onder een script-lock zodat
 // twee toestellen die tegelijk schrijven elkaars rijen niet kunnen
 // verschuiven (deleteRow op een verschoven index = verkeerde rij weg).
-var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, blockDevice: 1, unblockDevice: 1 };
+var MUTATING_ACTIONS = { add: 1, update: 1, "delete": 1, log: 1, addRoom: 1, updateRoom: 1, blockDevice: 1, unblockDevice: 1 };
 
 function handleRequest_(params) {
   try {
@@ -78,6 +78,7 @@ function dispatch_(action, params) {
   if (action === "delete")   return handleDelete(params.id);
   if (action === "log")      return handleLog(params);
   if (action === "addRoom")      return handleAddRoom(params.name, params.desc);
+  if (action === "updateRoom")   return handleUpdateRoom(params.oldName, params.newName, params.desc);
   if (action === "getRooms")     return handleGetRooms();
   if (action === "getBlocklist") return handleGetBlocklist();
   if (action === "blockDevice")  return handleBlockDevice(params.deviceId, params.deviceName, params.blockedBy);
@@ -253,25 +254,112 @@ function handleLog(params) {
 function handleAddRoom(name, desc) {
   if (!name) throw new Error("Geen naam opgegeven");
   // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
-  desc = desc || "";
+  name = String(name).trim();
+  desc = (desc || "").toString();
+  var sheet = getOrCreateRoomsSheet_();
+  // Controleer of de ruimte al bestaat
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === name) return { ok: true, existing: true };
+  }
+  sheet.appendRow([name, desc, ""]);
+  Logger.log("Ruimte toegevoegd: " + name);
+  return { ok: true };
+}
+
+// ----------------------------------------------------------
+// UPDATE ROOM: naam en/of beschrijving van een ruimte wijzigen
+// (beheerder-actie). Werkt zowel voor custom ruimtes als voor de
+// ingebouwde ruimtes: staat de ruimte nog niet in het tabblad
+// "Ruimtes", dan wordt er een override-rij toegevoegd. Bij een
+// naamswijziging worden ook alle kasten in "Kasten" mee hernoemd en
+// wordt de oude naam in kolom "renamedFrom" bewaard zodat elk toestel
+// de oude naam lokaal kan opruimen.
+// ----------------------------------------------------------
+function handleUpdateRoom(oldName, newName, desc) {
+  oldName = (oldName || "").toString().trim();
+  newName = (newName || "").toString().trim();
+  desc = (desc || "").toString();
+  if (!oldName) throw new Error("Geen oude naam opgegeven");
+  if (!newName) throw new Error("Geen nieuwe naam opgegeven");
+
+  var renamed = (newName !== oldName);
+  var sheet = getOrCreateRoomsSheet_();
+  var rows = sheet.getDataRange().getValues();
+
+  // Botsing: nieuwe naam is al in gebruik door een ándere ruimte-rij.
+  if (renamed) {
+    for (var c = 1; c < rows.length; c++) {
+      if (String(rows[c][0]).trim() === newName && String(rows[c][0]).trim() !== oldName) {
+        return { error: "Er bestaat al een ruimte met de naam \"" + newName + "\"." };
+      }
+    }
+  }
+
+  // Zoek de bestaande rij voor de oude naam.
+  var foundRow = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === oldName) { foundRow = i; break; }
+  }
+
+  if (foundRow !== -1) {
+    var prevRenamedFrom = String(rows[foundRow][2] || "");
+    var renamedFrom = renamed ? oldName : prevRenamedFrom;
+    sheet.getRange(foundRow + 1, 1, 1, 3).setValues([[newName, desc, renamedFrom]]);
+  } else {
+    // Ingebouwde ruimte die nog geen override-rij had.
+    sheet.appendRow([newName, desc, renamed ? oldName : ""]);
+  }
+
+  // Hernoem alle kasten die naar de oude ruimte verwezen.
+  var renamedCount = 0;
+  if (renamed) renamedCount = renameKastenLocation_(oldName, newName);
+
+  Logger.log("Ruimte bijgewerkt: \"" + oldName + "\" -> \"" + newName + "\" (" + renamedCount + " kasten hernoemd)");
+  return { ok: true, renamed: renamed, kastenRenamed: renamedCount };
+}
+
+// Werk de kolom "location" in het Kasten-tabblad bij: elke rij die
+// exact naar oldName verwees, krijgt newName. Eén batch-lees + -schrijf.
+function renameKastenLocation_(oldName, newName) {
+  var sheet = getOrCreateSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var locCol = headers.indexOf("location");
+  if (locCol === -1) return 0;
+  var range = sheet.getRange(2, locCol + 1, lastRow - 1, 1);
+  var vals = range.getValues();
+  var changed = 0;
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][0]) === oldName) { vals[i][0] = newName; changed++; }
+  }
+  if (changed > 0) range.setValues(vals);
+  return changed;
+}
+
+// Haalt het tabblad "Ruimtes" op of maakt het aan met de kolommen
+// name / desc / renamedFrom. Zorgt ervoor dat een ouder tabblad met
+// slechts 2 kolommen een "renamedFrom"-kop krijgt.
+function getOrCreateRoomsSheet_() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName("Ruimtes");
   if (!sheet) {
     sheet = ss.insertSheet("Ruimtes");
-    sheet.appendRow(["name", "desc"]);
-    sheet.getRange(1, 1, 1, 2).setFontWeight("bold").setBackground("#f0a500").setFontColor("#000000");
+    sheet.appendRow(["name", "desc", "renamedFrom"]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#f0a500").setFontColor("#000000");
     sheet.setFrozenRows(1);
     sheet.setColumnWidth(1, 200);
     sheet.setColumnWidth(2, 300);
+    sheet.setColumnWidth(3, 160);
+    return sheet;
   }
-  // Controleer of de ruimte al bestaat
-  var rows = sheet.getDataRange().getValues();
-  for (var i = 1; i < rows.length; i++) {
-    if (rows[i][0] === name) return { ok: true, existing: true };
+  // Bestaand tabblad: vul de derde kolomkop aan indien die ontbreekt.
+  if (sheet.getLastColumn() < 3) {
+    sheet.getRange(1, 3).setValue("renamedFrom").setFontWeight("bold").setBackground("#f0a500").setFontColor("#000000");
+    sheet.setColumnWidth(3, 160);
   }
-  sheet.appendRow([name, desc]);
-  Logger.log("Ruimte toegevoegd: " + name);
-  return { ok: true };
+  return sheet;
 }
 
 // ----------------------------------------------------------
@@ -284,7 +372,11 @@ function handleGetRooms() {
   var rows = sheet.getDataRange().getValues();
   var result = [];
   for (var i = 1; i < rows.length; i++) {
-    if (rows[i][0]) result.push({ name: String(rows[i][0]), desc: String(rows[i][1] || "") });
+    if (rows[i][0]) result.push({
+      name: String(rows[i][0]).trim(),
+      desc: String(rows[i][1] || ""),
+      renamedFrom: String(rows[i][2] || "").trim()
+    });
   }
   return result;
 }
