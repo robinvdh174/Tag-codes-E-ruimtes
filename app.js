@@ -984,10 +984,10 @@ function _renderSearchEmpty(container) {
 
   const sky = document.createElement("img");
   sky.className = "search-skyline";
-  sky.src = "./sappi-skyline.png";
+  sky.src = "./sappi-skyline.svg";
   sky.alt = "Skyline van de Sappi-fabriek";
-  sky.width = 704;
-  sky.height = 214;
+  sky.width = 2816;
+  sky.height = 856;
   sky.decoding = "async";
   empty.appendChild(sky);
 
