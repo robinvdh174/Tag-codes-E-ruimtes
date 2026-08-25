@@ -939,20 +939,14 @@ function recordRecent(code) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(arr.slice(0, RECENT_MAX))); } catch(e) {}
 }
 
-// Leeg zoekscherm: totaalteller + recent bekeken + woordmerk.
+// Leeg zoekscherm: recent bekeken + woordmerk + skyline-tekening.
+// Het totaal aantal kasten staat nu bij de "Gevonden"-teller (index.html);
+// dit scherm blijft daardoor rustiger.
 // DOM-opbouw i.p.v. innerHTML omdat recente codes user-data zijn.
 function _renderSearchEmpty(container) {
   container.textContent = "";
   const empty = document.createElement("div");
   empty.className = "empty";
-  const title = document.createElement("b");
-  title.textContent = "Typ een kastnummer";
-  empty.appendChild(title);
-  const total = document.createElement("span");
-  total.id = "totalCount";
-  total.textContent = data.length;
-  empty.appendChild(total);
-  empty.appendChild(document.createTextNode(" kasten beschikbaar"));
 
   // Codes van intussen verwijderde kasten niet meer aanbieden.
   const recents = getRecents().filter(function(code) {
@@ -987,6 +981,16 @@ function _renderSearchEmpty(container) {
   logo.className = "search-logo";
   logo.textContent = "Sappi";
   empty.appendChild(logo);
+
+  const sky = document.createElement("img");
+  sky.className = "search-skyline";
+  sky.src = "./sappi-skyline.png";
+  sky.alt = "Skyline van de Sappi-fabriek";
+  sky.width = 704;
+  sky.height = 214;
+  sky.decoding = "async";
+  empty.appendChild(sky);
+
   container.appendChild(empty);
 }
 
