@@ -223,7 +223,7 @@ input[type=date]:focus{border-color:var(--accent);}
 /* Full-bleed: breekt uit de content-marges (main + .empty) zodat de
    tekening de VOLLE schermbreedte pakt. left:50% + -50vw is de klassieke
    edge-to-edge-truc. Wat lager gezet met margin-top. */
-.search-skyline{display:block;width:100vw;height:auto;aspect-ratio:2816/856;position:relative;left:50%;margin-left:-50vw;margin-top:3.5rem;opacity:.95;}
+.search-skyline{display:block;width:100vw;height:auto;aspect-ratio:2816/856;position:relative;left:50%;margin-left:-50vw;margin-top:6rem;opacity:.95;}
 /* Op breed scherm niet de hele monitor vullen: terug binnen de kolom. */
 @media(min-width:768px){.search-skyline{width:100%;max-width:760px;left:auto;margin-left:auto;margin-right:auto;}}
 /* ===== TERUG NAAR BOVEN ===== */
