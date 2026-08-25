@@ -220,7 +220,12 @@ input[type=date]:focus{border-color:var(--accent);}
    vult de breedte op de gsm, met een plafond zodat hij op een breed
    scherm niet uit verhouding groot wordt. height:auto behoudt de
    beeldverhouding, aspect-ratio reserveert de ruimte vóór het laden. */
-.search-skyline{display:block;width:min(100%,560px);max-width:100%;height:auto;aspect-ratio:704/214;margin:1.6rem auto 0;opacity:.9;}
+/* Full-bleed: breekt uit de content-marges (main + .empty) zodat de
+   tekening de VOLLE schermbreedte pakt. left:50% + -50vw is de klassieke
+   edge-to-edge-truc. Wat lager gezet met margin-top. */
+.search-skyline{display:block;width:100vw;height:auto;aspect-ratio:2816/856;position:relative;left:50%;margin-left:-50vw;margin-top:3.5rem;opacity:.95;}
+/* Op breed scherm niet de hele monitor vullen: terug binnen de kolom. */
+@media(min-width:768px){.search-skyline{width:100%;max-width:760px;left:auto;margin-left:auto;margin-right:auto;}}
 /* ===== TERUG NAAR BOVEN ===== */
 .btn-scroll-top{position:fixed;right:max(1rem,env(safe-area-inset-right));bottom:max(1.2rem,env(safe-area-inset-bottom));width:44px;height:44px;border-radius:50%;background:var(--surface);border:1.5px solid var(--border);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.45);z-index:150;}
 .btn-scroll-top[hidden]{display:none;}
