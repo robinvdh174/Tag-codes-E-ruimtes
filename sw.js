@@ -12,7 +12,8 @@ const ASSETS = [
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable-192.png",
-  "./icon-maskable-512.png"
+  "./icon-maskable-512.png",
+  "./sappi-skyline.png"
 ];
 // Tesseract.js assets worden NIET in de install-precache geplaatst
 // (zou de install met ~16 MB belasten en op trage netwerken laten
