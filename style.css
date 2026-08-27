@@ -32,7 +32,11 @@ p.sub{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing
 .status-badge.hidden{display:none!important;}
 main{padding:1rem 1.2rem;}
 .panel{display:none;}.panel.active{display:block;}
-input[type=text],textarea{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:.75rem 1rem;color:var(--text);font-size:1rem;outline:none;font-family:monospace;-webkit-appearance:none;}
+input[type=text],textarea{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:.75rem 1rem;color:var(--text);font-size:1rem;outline:none;font-family:monospace;-webkit-appearance:none;caret-color:var(--text);}
+/* De zwarte I-balk-muisaanwijzer van het OS is onzichtbaar op het donkere
+   invoerveld. Vervang hem door een witte I-balk met donkere rand (hotspot
+   in het midden), met de normale tekstcursor als fallback. */
+input[type=text],textarea{cursor:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M8%203h8M8%2021h8M12%203v18%22%20stroke%3D%22black%22%20stroke-width%3D%223.4%22%2F%3E%3Cpath%20d%3D%22M8%203h8M8%2021h8M12%203v18%22%20stroke%3D%22white%22%20stroke-width%3D%221.4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E') 12 12, text;}
 input[type=text]:focus,textarea:focus{border-color:var(--accent);}
 textarea{resize:vertical;min-height:60px;font-family:var(--font-sans);}
 .form-group{margin-bottom:1rem;}

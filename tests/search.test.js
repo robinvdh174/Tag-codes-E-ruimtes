@@ -139,5 +139,17 @@ function score(d, query) {
   ok(s > 0, "User-test: _scoreItem geeft positieve score");
 }
 
+// ---------- 15. Vrije tekst: spaties en accenten negeren ----------
+{
+  const d = { code: "", location: "Bron water" };
+  ok(score(d, "bronwater") > 0, "Spatieloze query matcht locatie mét spatie");
+  ok(score(d, "bron water") > 0, "Query mét spatie matcht ook");
+  ok(score(d, "BRONWATER") > 0, "Hoofdletters maken niet uit");
+  const d2 = { code: "", location: "Réductie" };
+  ok(score(d2, "reductie") > 0, "Accentloze query matcht locatie mét accent");
+  const d3 = { code: "", note: "koeling bron water noord" };
+  ok(score(d3, "bronwater") > 0, "Spatieloze query matcht in notitie");
+}
+
 console.log("Search-tests voltooid.");
 summary();
