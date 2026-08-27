@@ -858,9 +858,15 @@ function _normCode(s) {
   }
   return v;
 }
-// Lichte normalisatie voor vrije tekst (ruimte/notitie/positie).
+// Normalisatie voor vrije tekst (ruimte/notitie/positie). Spaties en
+// accenten worden weggehaald zodat "bronwater" ook "Bron water" vindt
+// (en omgekeerd), en "réductie" matcht op "reductie". Zowel de zoekterm
+// als de velden lopen hier doorheen, dus de vergelijking blijft symmetrisch.
 function _normText(s) {
-  return String(s == null ? "" : s).toLowerCase();
+  return String(s == null ? "" : s)
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "");
 }
 
 // Levenshtein-afstand met early-exit als afstand > maxDist.
