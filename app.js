@@ -1018,7 +1018,8 @@ function _matchVerdelers(qNormCode) {
 // nodig had met één tik terug te vinden is.
 // ============================================================
 const RECENT_KEY = "ekast-recent";
-const RECENT_MAX = 6;
+const RECENT_MAX = 6;   // bewaard (reserve voor intussen verwijderde kasten)
+const RECENT_SHOW = 2;  // getoond op het startscherm — meer duwt de skyline weg
 function getRecents() {
   try {
     const arr = JSON.parse(safeGet(RECENT_KEY, "[]"));
@@ -1046,7 +1047,7 @@ function _renderSearchEmpty(container) {
   const recents = getRecents().filter(function(code) {
     const n = _normCode(code);
     return data.some(function(d) { return _normCode(d.code) === n; });
-  });
+  }).slice(0, RECENT_SHOW);
   if (recents.length > 0) {
     const wrap = document.createElement("div");
     wrap.className = "suggestions";
