@@ -431,9 +431,16 @@ async function syncFromSheets(silent) {
         protectedIds.forEach(function(pid) {
           if (!seen[pid] && localMap[pid]) merged.push(localMap[pid]);
         });
-        data = deduplicateById(merged);
-        saveLocal();
-        refreshUI();
+        const next = deduplicateById(merged);
+        // Enkel hertekenen als er echt iets veranderd is: een volledige
+        // refresh elke 30 s liet de app op een gsm telkens even bevriezen
+        // en klapte open kaarten (bewerken/verwijderen) weer dicht.
+        const changed = JSON.stringify(next) !== JSON.stringify(data);
+        data = next;
+        if (changed) {
+          saveLocal();
+          refreshUI();
+        }
         const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
         setSyncStatus("ok", "Gesync " + now);
       } else if (Array.isArray(json) && json.length === 0) {
@@ -782,6 +789,7 @@ function renderStatus() {
   const active = data.filter(function(d) { return d.status && d.status !== ""; });
   document.getElementById("statusCount").innerText = active.length;
   const container = document.getElementById("statusResults");
+  _stopLazy(container);
   container.textContent = "";
   if (active.length === 0) {
     container.innerHTML = "<div class=\"empty\"><b>Geen actieve meldingen</b>Alle kasten zijn in bedrijf</div>";
@@ -789,13 +797,13 @@ function renderStatus() {
   }
   // Zelfde groepering per ruimte als de Lijst-tab: wie meerdere meldingen
   // heeft, ziet meteen welke in dezelfde ruimte zitten.
-  const frag = document.createDocumentFragment();
-  _appendGroupedByRoom(frag, active);
-  container.appendChild(frag);
+  _renderLazy(container, _groupedByRoomNodes(active), "status");
 }
 
-// Groepeert items per ruimte en voegt ze — met ruimte-kop — toe aan frag.
-function _appendGroupedByRoom(frag, items) {
+// Groepeert items per ruimte: geeft node-functies terug (ruimte-kop,
+// dan de kaarten van die ruimte) voor _renderLazy.
+function _groupedByRoomNodes(items) {
+  const nodes = [];
   const groups = {};
   const order = [];
   for (let i = 0; i < items.length; i++) {
@@ -806,25 +814,30 @@ function _appendGroupedByRoom(frag, items) {
   order.sort(function(a, b) { return a.localeCompare(b); });
   for (let g = 0; g < order.length; g++) {
     const loc = order[g];
-    const hdr = document.createElement("div");
-    hdr.className = "list-room-header";
-    hdr.appendChild(document.createTextNode(loc + " (" + groups[loc].length + ")"));
-    if (ROOM_INFO[loc]) {
-      hdr.appendChild(document.createTextNode(" "));
-      const infoBtn = document.createElement("button");
-      infoBtn.className = "btn-info-loc";
-      infoBtn.type = "button";
-      infoBtn.title = "Waar is dit?";
-      infoBtn.textContent = "ⓘ";
-      (function(l) {
-        infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
-      })(loc);
-      hdr.appendChild(infoBtn);
-    }
-    frag.appendChild(hdr);
+    nodes.push(function() { return _roomHeader(loc, groups[loc].length); });
     groups[loc].sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
-    for (let i = 0; i < groups[loc].length; i++) frag.appendChild(makeCard(groups[loc][i]));
+    groups[loc].forEach(function(d) { nodes.push(function() { return makeCard(d); }); });
   }
+  return nodes;
+}
+
+function _roomHeader(loc, count) {
+  const hdr = document.createElement("div");
+  hdr.className = "list-room-header";
+  hdr.appendChild(document.createTextNode(loc + " (" + count + ")"));
+  if (ROOM_INFO[loc]) {
+    hdr.appendChild(document.createTextNode(" "));
+    const infoBtn = document.createElement("button");
+    infoBtn.className = "btn-info-loc";
+    infoBtn.type = "button";
+    infoBtn.title = "Waar is dit?";
+    infoBtn.textContent = "ⓘ";
+    (function(l) {
+      infoBtn.addEventListener("click", function(e) { e.stopPropagation(); showRoomInfo(l); });
+    })(loc);
+    hdr.appendChild(infoBtn);
+  }
+  return hdr;
 }
 
 function updateStatusBadge() {
@@ -1121,6 +1134,7 @@ function _doSearchNow(value) {
   if (!raw) {
     _currentSearchTerm = "";
     countEl.innerText = "0";
+    _stopLazy(container);
     _renderSearchEmpty(container);
     return;
   }
@@ -1157,17 +1171,17 @@ function _doSearchNow(value) {
   // Teller = gevonden kasten (zoals het totaal erachter); verdeler-kaarten
   // zijn extra info en tellen niet mee.
   countEl.innerText = scored.filter(function(r) { return r.item; }).length;
-  container.textContent = "";
   if (scored.length === 0 && verdelers.length === 0) {
+    _stopLazy(container);
+    container.textContent = "";
     _renderNoResults(container, raw, qNormCode);
     return;
   }
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < verdelers.length; i++) frag.appendChild(makeVerdelerCard(verdelers[i]));
-  for (let i = 0; i < scored.length; i++) {
-    frag.appendChild(scored[i].item ? makeCard(scored[i].item) : makeUitgangCard(scored[i].uitgang));
-  }
-  container.appendChild(frag);
+  const nodes = verdelers.map(function(v) { return function() { return makeVerdelerCard(v); }; })
+    .concat(scored.map(function(r) {
+      return function() { return r.item ? makeCard(r.item) : makeUitgangCard(r.uitgang); };
+    }));
+  _renderLazy(container, nodes, "search:" + raw);
 }
 
 // "Bedoelde je..."-suggesties op basis van Levenshtein-afstand op
@@ -1223,6 +1237,58 @@ function _renderNoResults(container, raw, qNormCode) {
     }
   }
   container.appendChild(empty);
+}
+
+// ============================================================
+// KAARTEN IN PORTIES TEKENEN
+// ============================================================
+// Alle ~1000 kaarten in één keer opbouwen blokkeerde de app op een gsm
+// meerdere seconden (DOM + layout). We tekenen eerst een portie en de
+// rest pas wanneer de gebruiker in de buurt van het einde scrolt.
+// `nodes` = lijst functies die elk één DOM-node teruggeven.
+// `key` = wat er getoond wordt (zoekterm/filter). Bij hertekenen met
+// dezelfde key (bv. na een sync) tekenen we minstens evenveel als ervoor,
+// zodat de scrollpositie niet verspringt.
+const LAZY_BATCH = 40;
+function _stopLazy(container) {
+  if (container._lazyObs) { container._lazyObs.disconnect(); container._lazyObs = null; }
+  container._lazyKey = null;
+  container._lazyCount = 0;
+}
+function _renderLazy(container, nodes, key) {
+  if (container._lazyObs) { container._lazyObs.disconnect(); container._lazyObs = null; }
+  const prev = container._lazyKey === key ? (container._lazyCount || 0) : 0;
+  container._lazyKey = key;
+  container.textContent = "";
+  let i = 0;
+  function more(n) {
+    const frag = document.createDocumentFragment();
+    const end = Math.min(nodes.length, i + n);
+    for (; i < end; i++) frag.appendChild(nodes[i]());
+    container.appendChild(frag);
+    container._lazyCount = i;
+  }
+  if (typeof IntersectionObserver === "undefined") { more(nodes.length); return; }
+  more(Math.max(LAZY_BATCH, prev));
+  if (i >= nodes.length) return;
+  const obs = new IntersectionObserver(function(entries) {
+    if (!entries.some(function(en) { return en.isIntersecting; })) return;
+    obs.disconnect();
+    const s = container.querySelector(":scope > .lazy-sentinel");
+    if (s) s.remove();
+    more(LAZY_BATCH);
+    if (i < nodes.length) observeSentinel();
+    else container._lazyObs = null;
+  }, { rootMargin: "0px 0px 1200px 0px" });
+  function observeSentinel() {
+    const s = document.createElement("div");
+    s.className = "lazy-sentinel";
+    s.setAttribute("aria-hidden", "true");
+    container.appendChild(s);
+    obs.observe(s);
+  }
+  container._lazyObs = obs;
+  observeSentinel();
 }
 
 // ============================================================
@@ -1656,16 +1722,14 @@ function showFiltered() {
   _currentSearchTerm = "";
   const filtered = data.filter(function(d) { return activeRoom === "all" || d.location === activeRoom; });
   const container = document.getElementById("listResults");
-  container.textContent = "";
-  const frag = document.createDocumentFragment();
-
+  let nodes;
   if (activeRoom === "all") {
-    _appendGroupedByRoom(frag, filtered);
+    nodes = _groupedByRoomNodes(filtered);
   } else {
     filtered.sort(function(a, b) { return (a.code||"").localeCompare(b.code||""); });
-    for (let i = 0; i < filtered.length; i++) frag.appendChild(makeCard(filtered[i]));
+    nodes = filtered.map(function(d) { return function() { return makeCard(d); }; });
   }
-  container.appendChild(frag);
+  _renderLazy(container, nodes, "list:" + activeRoom);
 }
 
 // ============================================================
@@ -2158,8 +2222,12 @@ function openKastfront(v, actief) {
   front.textContent = "";
   let actiefEl = null;
   v.velden.forEach(function(f) {
-    const col = _el("div", "kf-veld" + (f.uitgangen.length > 2 ? " kf-veld-lades" : ""));
+    // Zoals op de tekening: laden (+03) onder elkaar, deelvelden 31A/31B
+    // (+18) naast elkaar. Alle velden even hoog (CSS stretch).
+    const naast = f.uitgangen.length > 1 && f.uitgangen.every(function(u) { return /^\d+[A-Z]$/.test(u.nr || ""); });
+    const col = _el("div", "kf-veld" + (naast ? " kf-veld-naast" : f.uitgangen.length > 1 ? " kf-veld-lades" : ""));
     col.appendChild(_el("div", "kf-kop", f.veld));
+    const vak = naast ? col.appendChild(_el("div", "kf-naast")) : col;
     f.uitgangen.forEach(function(u) {
       const kast = kastVan.get(u);
       const st = kast ? kast.status : "";
@@ -2181,17 +2249,18 @@ function openKastfront(v, actief) {
         box.title = "Zoek " + u.tag;
       }
       if (u === actief) { box.classList.add("kf-actief"); actiefEl = box; }
-      col.appendChild(box);
+      vak.appendChild(box);
     });
     front.appendChild(col);
   });
 
   overlay.classList.add("open");
   front.scrollLeft = 0;
+  // Enkel het kastfront horizontaal verschuiven (scrollIntoView zou ook
+  // de pagina en de modal zelf mee laten scrollen).
   if (actiefEl) {
-    requestAnimationFrame(function() {
-      actiefEl.scrollIntoView({ block: "nearest", inline: "center" });
-    });
+    const col = actiefEl.closest(".kf-veld");
+    front.scrollLeft = Math.max(0, col.offsetLeft - (front.clientWidth - col.offsetWidth) / 2);
   }
 }
 

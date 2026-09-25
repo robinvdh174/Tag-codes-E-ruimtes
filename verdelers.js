@@ -36,7 +36,7 @@ const VERDELERS = [
         { nr: "31", tag: "106A08P1.M1", omschrijving: "THICK STOCK PUMPS PROPTOREN OL", schema: "E-070-1605" },
       ] },
       { veld: "+12", uitgangen: [
-        { nr: "31", tag: "06A10P1.M1", omschrijving: "THICK STOCK PUMPS PROPTOREN ML", schema: "E-070-1606" }, // zo op de tekening; mogelijk 106A10P1.M1
+        { nr: "31", tag: "106A10P1.M1", omschrijving: "THICK STOCK PUMPS PROPTOREN ML", schema: "E-070-1606" }, // tekening zegt "06A10P1.M1" (tekenfout, bevestigd)
       ] },
       { veld: "+14", uitgangen: [
         { nr: "31", tag: "106A67P8.M1", omschrijving: "POMP GEZUIVERD WITWATER NAAR CSB", schema: "E-070-1607" },

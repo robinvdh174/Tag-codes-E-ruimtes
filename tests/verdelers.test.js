@@ -36,6 +36,9 @@ function uitVoorTag(tag) {
   eq(_findUitgang("106A09P1"), null, "Onvolledige code koppelt niet aan een uitgang");
   eq(_findUitgang(""), null, "Lege code → null");
   eq(_findUitgang("K822"), null, "Onbekende code → null");
+  const e12 = _findUitgang("106A10P1.M1");
+  ok(e12 && e12.veld === "+12", "106A10P1.M1 (tekenfout 06A10 gecorrigeerd) zit in veld +12");
+  eq(_findUitgang("06A10P1.M1"), null, "Foute tag van de tekening koppelt niet meer");
 }
 
 // ---------- 3. Zoekscore uitgangen ----------
