@@ -1071,28 +1071,6 @@ function _renderSearchEmpty(container) {
     empty.appendChild(wrap);
   }
 
-  const verdelers = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
-  if (verdelers.length > 0) {
-    const wrap = document.createElement("div");
-    wrap.className = "suggestions";
-    const lbl = document.createElement("div");
-    lbl.className = "suggestions-label";
-    lbl.textContent = "Verdelers:";
-    wrap.appendChild(lbl);
-    const row = document.createElement("div");
-    row.className = "suggestions-row";
-    verdelers.forEach(function(v) {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "suggestion-chip chip-verdeler";
-      chip.textContent = v.naam;
-      chip.addEventListener("click", function() { openKastfront(v, null); });
-      row.appendChild(chip);
-    });
-    wrap.appendChild(row);
-    empty.appendChild(wrap);
-  }
-
   const logo = document.createElement("span");
   logo.className = "search-logo";
   logo.textContent = "Sappi";

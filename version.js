@@ -4,4 +4,4 @@
 // Bump dit bij elke release: nieuw onderwerp = volgend heel nummer (v48),
 // vervolgaanpassing aan hetzelfde onderwerp = subnummer (v48.1, v48.2).
 // Zie CLAUDE.md "Versienummering".
-const APP_VERSION = "v47";
+const APP_VERSION = "v47.1";
