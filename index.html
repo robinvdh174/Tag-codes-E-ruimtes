@@ -320,6 +320,19 @@
     </div>
   </div>
 </div>
+<!-- Kastfront: schematisch overzicht van een verdeler (verdelers.js) -->
+<div class="modal-overlay" id="kastfrontModal" role="dialog" aria-modal="true" aria-labelledby="kastfrontTitle">
+  <div class="modal kf-modal">
+    <div class="modal-title" id="kastfrontTitle" style="margin-bottom:.2rem;"></div>
+    <div class="kf-sub" id="kastfrontSub"></div>
+    <div class="kf-front" id="kastfrontVelden"></div>
+    <div class="kf-hint">Tik op een uitgang om die te zoeken &middot; veeg opzij voor alle velden.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" type="button" id="kastfrontCloseBtn">&larr; Sluiten</button>
+    </div>
+  </div>
+</div>
+
 <div class="info-popup-overlay" id="infoPopupOverlay">
   <div class="info-popup">
     <div class="info-popup-title" id="infoPopupTitle"></div>
@@ -344,6 +357,7 @@
 </script>
 
 <script src="version.js"></script>
+<script src="verdelers.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

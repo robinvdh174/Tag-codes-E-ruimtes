@@ -5,6 +5,7 @@ const ASSETS = [
   "./style.css",
   "./app.js",
   "./version.js",
+  "./verdelers.js",
   "./manifest.json",
   "./ekast-icon.svg",
   "./ekast-icon-maskable.svg",
