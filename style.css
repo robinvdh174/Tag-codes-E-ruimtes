@@ -251,7 +251,6 @@ input[type=date]:focus{border-color:var(--accent);}
 .verdeler-link:active{background:var(--border);}
 .verdeler-veld{font-size:.85rem;color:var(--info);font-weight:700;margin-top:.3rem;}
 .verdeler-bron{font-size:.7rem;color:var(--muted);margin-top:.4rem;text-transform:uppercase;letter-spacing:.06em;}
-.chip-verdeler{border-color:var(--info);background:var(--surface-2);color:var(--info);}
 .kf-modal{max-width:none;}
 .kf-sub{font-size:.85rem;color:var(--muted);margin-bottom:.9rem;}
 .kf-front{position:relative;display:flex;align-items:stretch;gap:4px;overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px;}
