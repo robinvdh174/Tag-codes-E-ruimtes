@@ -254,11 +254,15 @@ input[type=date]:focus{border-color:var(--accent);}
 .chip-verdeler{border-color:var(--info);background:var(--surface-2);color:var(--info);}
 .kf-modal{max-width:none;}
 .kf-sub{font-size:.85rem;color:var(--muted);margin-bottom:.9rem;}
-.kf-front{display:flex;align-items:flex-start;gap:4px;overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px;}
-.kf-veld{flex:0 0 128px;display:flex;flex-direction:column;gap:4px;scroll-snap-align:start;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:4px;}
+.kf-front{position:relative;display:flex;align-items:stretch;gap:4px;overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px;}
+.kf-veld{flex:0 0 132px;display:flex;flex-direction:column;gap:4px;scroll-snap-align:start;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:4px;}
 .kf-kop{font-family:monospace;font-weight:900;font-size:.85rem;text-align:center;color:var(--accent);padding:.25rem 0;border-bottom:1px solid var(--border);}
-.kf-uit{min-height:110px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success);border-radius:5px;padding:.4rem;cursor:pointer;display:flex;flex-direction:column;gap:.15rem;}
+.kf-uit{flex:1 1 auto;min-height:96px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success);border-radius:5px;padding:.4rem;cursor:pointer;display:flex;flex-direction:column;gap:.15rem;}
+.kf-veld-lades{flex-basis:180px;}
 .kf-veld-lades .kf-uit{min-height:0;}
+.kf-veld-naast{flex-basis:220px;}
+.kf-naast{flex:1;display:flex;gap:4px;}
+.kf-naast .kf-uit{flex:1 1 0;min-width:0;}
 .kf-uit:active{background:var(--border);}
 .kf-uit.kf-leeg{border-left-color:var(--border);cursor:default;opacity:.65;}
 .kf-uit.kf-veilig{border-left-color:var(--warn);background:#2a2008;}
@@ -271,4 +275,5 @@ input[type=date]:focus{border-color:var(--accent);}
 .kf-status{font-size:.68rem;font-weight:700;color:var(--warn);}
 .kf-los .kf-status{color:var(--danger-text);}
 .nowrap{white-space:nowrap;}
+.lazy-sentinel{height:1px;}
 .kf-hint{font-size:.72rem;color:var(--muted);margin-top:.5rem;}
