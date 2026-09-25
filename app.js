@@ -665,6 +665,7 @@ async function init() {
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
         else if (document.getElementById("infoPopupOverlay").classList.contains("open")) { closeInfoPopup(); }
+        else if (document.getElementById("kastfrontModal").classList.contains("open")) { closeKastfront(); }
         // Conflict-dialoog forceert een keuze; Escape = "mijn versie bewaren"
         // (veiligste default, dialoog komt bij de volgende sync vanzelf terug).
         else if (document.getElementById("conflictOverlay").classList.contains("open")) { resolveConflict("mine"); }
@@ -925,6 +926,80 @@ function _scoreItem(d, qNormCode, qNormText) {
 }
 
 // ============================================================
+// VERDELERS — indelingstekeningen (verdelers.js): welke uitgang
+// (tag) in welk veld van welke verdeler zit, met schemanummer.
+// ============================================================
+// Platte lijst van alle uitgangen, lui opgebouwd (VERDELERS is statisch).
+let _verdelerIdx = null;
+function _verdelerUitgangen() {
+  if (_verdelerIdx) return _verdelerIdx;
+  _verdelerIdx = [];
+  const lijst = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
+  lijst.forEach(function(v) {
+    // "MCC 21B4" → "21B4": de veldcode op de tekening is =21B4+02.
+    const kort = String(v.naam || "").split(" ").pop();
+    (v.velden || []).forEach(function(f) {
+      (f.uitgangen || []).forEach(function(u) {
+        _verdelerIdx.push({
+          verdeler: v, veld: f.veld, uitgang: u,
+          tagNorm: _normCode(u.tag),
+          veldNorm: _normCode(kort + f.veld),
+          kortNorm: _normCode(kort)
+        });
+      });
+    });
+  });
+  return _verdelerIdx;
+}
+
+// Zoekt de uitgang die bij een kastcode hoort. Exact (genormaliseerd), of
+// de kastcode begint met de tag (bv. kast "106A40P3.M1-M1", tag "106A40P3.M1").
+function _findUitgang(code) {
+  const n = _normCode(code);
+  if (!n) return null;
+  const idx = _verdelerUitgangen();
+  let prefix = null;
+  for (let i = 0; i < idx.length; i++) {
+    const t = idx[i].tagNorm;
+    if (!t) continue;
+    if (t === n) return idx[i];
+    if (!prefix && t.length >= 8 && n.indexOf(t) === 0) prefix = idx[i];
+  }
+  return prefix;
+}
+
+// Score van een uitgang voor de zoekterm (zelfde schaal als _scoreItem).
+function _scoreUitgang(e, qNormCode, qNormText) {
+  const u = e.uitgang;
+  if (qNormCode) {
+    if (e.tagNorm) {
+      if (e.tagNorm === qNormCode) return 1000;
+      if (e.tagNorm.indexOf(qNormCode) === 0) return 900 - qNormCode.length;
+      const idx = e.tagNorm.indexOf(qNormCode);
+      if (idx !== -1 && qNormCode.length >= 3) return 800 - idx;
+    }
+    // Veldcode "21B4+02" — pas matchen als er méér dan de verdelernaam
+    // getypt is, anders geeft "21B4" alle uitgangen (daarvoor is er de
+    // verdelerkaart).
+    if (qNormCode.length > e.kortNorm.length && e.veldNorm.indexOf(qNormCode) === 0) return 850;
+    const sch = _normCode(u.schema);
+    if (qNormCode.length >= 4 && sch && sch.indexOf(qNormCode) !== -1) return 600;
+  }
+  const oms = _normText(u.omschrijving);
+  if (qNormText && qNormText.length >= 3 && oms && oms.indexOf(qNormText) !== -1) return 300;
+  return -1;
+}
+
+// Verdelers waarvan de naam matcht ("MCC 21B4", "21b4", "mcc").
+function _matchVerdelers(qNormCode) {
+  if (!qNormCode || qNormCode.length < 3) return [];
+  const lijst = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
+  return lijst.filter(function(v) {
+    return _normCode(v.naam).indexOf(qNormCode) !== -1;
+  });
+}
+
+// ============================================================
 // RECENT BEKEKEN — laatste kaarten die de gebruiker aantikte.
 // Getoond op het lege zoekscherm zodat een kast die je gisteren
 // nodig had met één tik terug te vinden is.
@@ -983,6 +1058,28 @@ function _renderSearchEmpty(container) {
     empty.appendChild(wrap);
   }
 
+  const verdelers = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
+  if (verdelers.length > 0) {
+    const wrap = document.createElement("div");
+    wrap.className = "suggestions";
+    const lbl = document.createElement("div");
+    lbl.className = "suggestions-label";
+    lbl.textContent = "Verdelers:";
+    wrap.appendChild(lbl);
+    const row = document.createElement("div");
+    row.className = "suggestions-row";
+    verdelers.forEach(function(v) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion-chip chip-verdeler";
+      chip.textContent = v.naam;
+      chip.addEventListener("click", function() { openKastfront(v, null); });
+      row.appendChild(chip);
+    });
+    wrap.appendChild(row);
+    empty.appendChild(wrap);
+  }
+
   const logo = document.createElement("span");
   logo.className = "search-logo";
   logo.textContent = "Sappi";
@@ -1035,18 +1132,41 @@ function _doSearchNow(value) {
     const s = _scoreItem(data[i], qNormCode, qNormText);
     if (s >= 0) scored.push({ item: data[i], score: s });
   }
+  // Uitgangen uit de verdeler-overzichten. Een uitgang waarvan de kast al
+  // in de lijst staat niet dubbel tonen: de kastkaart toont de verdeler zelf.
+  const inKasten = new Set();
+  for (let i = 0; i < scored.length; i++) {
+    const u = _findUitgang(scored[i].item.code);
+    if (u) inKasten.add(u);
+  }
+  const uitIdx = _verdelerUitgangen();
+  for (let i = 0; i < uitIdx.length; i++) {
+    if (inKasten.has(uitIdx[i])) continue;
+    const s = _scoreUitgang(uitIdx[i], qNormCode, qNormText);
+    if (s >= 0) scored.push({ uitgang: uitIdx[i], score: s });
+  }
   scored.sort(function(a, b) {
     if (b.score !== a.score) return b.score - a.score;
-    return (a.item.code || "").localeCompare(b.item.code || "");
+    // Bij gelijke score eerst de kasten, dan de verdeler-uitgangen.
+    if (!a.item !== !b.item) return a.item ? -1 : 1;
+    const ca = a.item ? a.item.code : a.uitgang.uitgang.tag;
+    const cb = b.item ? b.item.code : b.uitgang.uitgang.tag;
+    return (ca || "").localeCompare(cb || "");
   });
-  countEl.innerText = scored.length;
+  const verdelers = _matchVerdelers(qNormCode);
+  // Teller = gevonden kasten (zoals het totaal erachter); verdeler-kaarten
+  // zijn extra info en tellen niet mee.
+  countEl.innerText = scored.filter(function(r) { return r.item; }).length;
   container.textContent = "";
-  if (scored.length === 0) {
+  if (scored.length === 0 && verdelers.length === 0) {
     _renderNoResults(container, raw, qNormCode);
     return;
   }
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < scored.length; i++) frag.appendChild(makeCard(scored[i].item));
+  for (let i = 0; i < verdelers.length; i++) frag.appendChild(makeVerdelerCard(verdelers[i]));
+  for (let i = 0; i < scored.length; i++) {
+    frag.appendChild(scored[i].item ? makeCard(scored[i].item) : makeUitgangCard(scored[i].uitgang));
+  }
   container.appendChild(frag);
 }
 
@@ -1204,6 +1324,8 @@ function makeCard(item) {
     appendHighlighted(note, item.note, term);
     info.appendChild(note);
   }
+  const uit = _findUitgang(item.code);
+  if (uit) info.appendChild(_makeVerdelerLink(uit));
 
   top.appendChild(info);
 
@@ -1918,6 +2040,164 @@ function showRoomInfo(loc) {
 function closeInfoPopup() {
   document.getElementById("infoPopupOverlay").classList.remove("open");
   clearTimeout(window._roomToast);
+}
+
+// ============================================================
+// KASTFRONT — verdeler-overzicht als schematische voorstelling
+// ============================================================
+function _el(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text != null) el.textContent = text;
+  return el;
+}
+
+function _veldLabel(e) {
+  return e.verdeler.naam + " · veld " + e.veld +
+    (e.uitgang.nr && e.verdeler.velden.some(function(f) { return f.veld === e.veld && f.uitgangen.length > 1; })
+      ? " (" + e.uitgang.nr + ")" : "");
+}
+
+// Knop op een kastkaart: "🔌 MCC 21B4 · veld +02 · E-070-1596".
+function _makeVerdelerLink(e) {
+  const btn = _el("button", "verdeler-link");
+  btn.type = "button";
+  btn.textContent = "🔌 " + _veldLabel(e);
+  if (e.uitgang.schema) btn.appendChild(_el("span", "nowrap", " · " + e.uitgang.schema));
+  btn.title = "Toon de verdeler";
+  btn.addEventListener("click", function(ev) {
+    ev.stopPropagation();
+    openKastfront(e.verdeler, e.uitgang);
+  });
+  return btn;
+}
+
+function _makeRoomLine(ruimte, term) {
+  const loc = _el("div", "loc");
+  appendHighlighted(loc, ruimte, term);
+  if (ruimte && ROOM_INFO[ruimte]) {
+    loc.appendChild(document.createTextNode(" "));
+    const infoBtn = _el("button", "btn-info-loc", "ⓘ");
+    infoBtn.type = "button";
+    infoBtn.title = "Waar is dit?";
+    infoBtn.addEventListener("click", function(ev) {
+      ev.stopPropagation();
+      showRoomInfo(ruimte);
+    });
+    loc.appendChild(infoBtn);
+  }
+  return loc;
+}
+
+function _clickable(card, fn) {
+  card.setAttribute("role", "button");
+  card.setAttribute("tabindex", "0");
+  card.addEventListener("click", fn);
+  card.addEventListener("keydown", function(ev) {
+    if ((ev.key === "Enter" || ev.key === " ") && ev.target === card) { ev.preventDefault(); fn(); }
+  });
+}
+
+// Zoekresultaat voor een uitgang die (nog) niet als kast in de lijst staat.
+function makeUitgangCard(e) {
+  const u = e.uitgang;
+  const term = _currentSearchTerm;
+  const card = _el("div", "card card-verdeler");
+  _clickable(card, function() { openKastfront(e.verdeler, u); });
+  const code = _el("div", "code");
+  appendHighlighted(code, u.tag || u.omschrijving || "(leeg)", term);
+  card.appendChild(code);
+  card.appendChild(_makeRoomLine(e.verdeler.ruimte, term));
+  card.appendChild(_el("div", "verdeler-veld", "🔌 " + _veldLabel(e)));
+  if (u.tag && u.omschrijving) {
+    const oms = _el("div", "note");
+    appendHighlighted(oms, u.omschrijving, term);
+    card.appendChild(oms);
+  }
+  if (u.schema) {
+    const sch = _el("div", "pos");
+    sch.appendChild(document.createTextNode("📄 Schema "));
+    appendHighlighted(sch, u.schema, term);
+    card.appendChild(sch);
+  }
+  card.appendChild(_el("div", "verdeler-bron", "Uit verdeleroverzicht"));
+  return card;
+}
+
+// Zoekresultaat voor een verdeler zelf ("21B4", "MCC 21B4").
+function makeVerdelerCard(v) {
+  const card = _el("div", "card card-verdeler");
+  _clickable(card, function() { openKastfront(v, null); });
+  const code = _el("div", "code");
+  appendHighlighted(code, v.naam, _currentSearchTerm);
+  card.appendChild(code);
+  card.appendChild(_makeRoomLine(v.ruimte, ""));
+  const n = v.velden.reduce(function(a, f) { return a + f.uitgangen.length; }, 0);
+  card.appendChild(_el("div", "verdeler-veld",
+    "🔌 " + v.velden.length + " velden · " + n + " uitgangen" +
+    (v.tekening ? " · tekening " + v.tekening : "")));
+  card.appendChild(_el("div", "verdeler-bron", "Tik om het kastfront te openen"));
+  return card;
+}
+
+function openKastfront(v, actief) {
+  const overlay = document.getElementById("kastfrontModal");
+  if (!overlay) return;
+  document.getElementById("kastfrontTitle").textContent = v.naam;
+  document.getElementById("kastfrontSub").textContent =
+    "📍 " + (v.ruimte || "onbekende ruimte") + (v.tekening ? " · tekening " + v.tekening : "");
+
+  // Kast per uitgang opzoeken voor de status (veiliggesteld/losgekoppeld).
+  const kastVan = new Map();
+  for (let i = 0; i < data.length; i++) {
+    const e = _findUitgang(data[i].code);
+    if (e && e.verdeler === v && !kastVan.has(e.uitgang)) kastVan.set(e.uitgang, data[i]);
+  }
+
+  const front = document.getElementById("kastfrontVelden");
+  front.textContent = "";
+  let actiefEl = null;
+  v.velden.forEach(function(f) {
+    const col = _el("div", "kf-veld" + (f.uitgangen.length > 2 ? " kf-veld-lades" : ""));
+    col.appendChild(_el("div", "kf-kop", f.veld));
+    f.uitgangen.forEach(function(u) {
+      const kast = kastVan.get(u);
+      const st = kast ? kast.status : "";
+      const box = _el("div", "kf-uit" + (!u.tag ? " kf-leeg" : "") +
+        (st === "ok" ? " kf-veilig" : st === "losgekoppeld" ? " kf-los" : ""));
+      if (f.uitgangen.length > 1 && u.nr) box.appendChild(_el("div", "kf-nr", u.nr));
+      if (u.tag) box.appendChild(_el("div", "kf-tag", u.tag));
+      if (u.omschrijving) box.appendChild(_el("div", "kf-oms", u.omschrijving));
+      if (u.schema) box.appendChild(_el("div", "kf-schema", u.schema));
+      if (st === "ok") box.appendChild(_el("div", "kf-status", "⚠ Veiliggesteld"));
+      else if (st === "losgekoppeld") box.appendChild(_el("div", "kf-status", "⚠ Losgekoppeld"));
+      if (u.tag) {
+        _clickable(box, function() {
+          closeKastfront();
+          switchTab("search");
+          const inp = document.getElementById("searchInput");
+          if (inp) { inp.value = u.tag; _doSearchNow(u.tag); }
+        });
+        box.title = "Zoek " + u.tag;
+      }
+      if (u === actief) { box.classList.add("kf-actief"); actiefEl = box; }
+      col.appendChild(box);
+    });
+    front.appendChild(col);
+  });
+
+  overlay.classList.add("open");
+  front.scrollLeft = 0;
+  if (actiefEl) {
+    requestAnimationFrame(function() {
+      actiefEl.scrollIntoView({ block: "nearest", inline: "center" });
+    });
+  }
+}
+
+function closeKastfront() {
+  const overlay = document.getElementById("kastfrontModal");
+  if (overlay) overlay.classList.remove("open");
 }
 
 // ============================================================
@@ -4015,6 +4295,9 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
 
   closeOnOutsideClick("roomsModal", ".modal", closeRoomsModal);
   on("roomsCloseBtn", "click", closeRoomsModal);
+
+  closeOnOutsideClick("kastfrontModal", ".modal", closeKastfront);
+  on("kastfrontCloseBtn", "click", closeKastfront);
 
   closeOnOutsideClick("editRoomModal", ".modal", closeEditRoomModal);
   on("editRoomCancelBtn", "click", closeEditRoomModal);
