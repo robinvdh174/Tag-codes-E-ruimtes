@@ -84,6 +84,7 @@ function dispatch_(action, params) {
   if (action === "blockDevice")  return handleBlockDevice(params.deviceId, params.deviceName, params.blockedBy);
   if (action === "unblockDevice")return handleUnblockDevice(params.deviceId);
   if (action === "getDevices")   return handleGetDevices();
+  if (action === "getVerdelers") return handleGetVerdelers();
   return { error: "Onbekende actie: " + action };
 }
 
@@ -107,6 +108,39 @@ function doPost(e) {
   // Bulk-overschrijven bestaat bewust niet — enkel de granulaire acties
   // hierboven, zodat de hele sheet nooit in één call gewist kan worden.
   return handleRequest_(params);
+}
+
+// ----------------------------------------------------------
+// VERDELERS: indeling van verdelers (uit de indelingstekeningen).
+// Staat bewust enkel in de sheet en niet in de app-code: de repo en de
+// website zijn openbaar. Eén rij per uitgang; de volgorde van de rijen
+// bepaalt de volgorde van de velden in het kastfront (links → rechts).
+// ----------------------------------------------------------
+var VERDELER_SHEET = "Verdelers";
+var VERDELER_HEADERS = ["verdeler", "ruimte", "tekening", "veld", "nr", "tag", "omschrijving", "schema"];
+
+function handleGetVerdelers() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(VERDELER_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(VERDELER_SHEET);
+    sheet.appendRow(VERDELER_HEADERS);
+    sheet.setFrozenRows(1);
+    return [];
+  }
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return [];
+  var headers = rows[0].map(function(h) { return String(h).trim().toLowerCase(); });
+  var result = [];
+  for (var i = 1; i < rows.length; i++) {
+    var obj = {};
+    for (var j = 0; j < VERDELER_HEADERS.length; j++) {
+      var col = headers.indexOf(VERDELER_HEADERS[j]);
+      obj[VERDELER_HEADERS[j]] = col === -1 ? "" : cellToString(rows[i][col]).trim();
+    }
+    if (obj.verdeler && obj.veld) result.push(obj);
+  }
+  return result;
 }
 
 // ----------------------------------------------------------

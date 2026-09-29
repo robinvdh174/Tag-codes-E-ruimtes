@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Leest een indelingstekening (AutoCAD-PDF uit Meridian) van een verdeler
-uit en print een JS-object om in verdelers.js te plakken.
+uit en schrijft de rijen voor het tabblad "Verdelers" van de Google Sheet
+(kolommen: verdeler, ruimte, tekening, veld, nr, tag, omschrijving, schema).
+
+BELANGRIJK: de uitvoer bevat bedrijfsgegevens. Nooit in deze (openbare)
+repo committen — enkel in de sheet plakken/importeren.
 
 Gebruik:
     pip install pymupdf
-    python3 tools/verdeler_uit_pdf.py tekening.pdf --ruimte 3KV
+    python3 tools/verdeler_uit_pdf.py tekening.pdf --ruimte "<ruimte>" > verdeler.csv
 
 Werkt op vector-PDF's (tekst selecteerbaar), niet op scans/foto's.
-Werkwijze: de veldkoppen (=21B4+02, ...) van de onderste tabel bepalen de
+Werkwijze: de veldkoppen (=12X3+02, ...) van de onderste tabel bepalen de
 kolommen; elke tekstregel eronder gaat naar de dichtstbijzijnde kolom.
 - Kolomvelden (verticale tekst): één uitgang, of meerdere (31A/31B).
 - Ladevelden (horizontale tekst, bv. +03): elke lade = tag + omschrijving,
@@ -15,8 +19,9 @@ kolommen; elke tekstregel eronder gaat naar de dichtstbijzijnde kolom.
 Controleer de uitvoer altijd tegen de tekening.
 """
 import argparse
-import json
+import csv
 import re
+import sys
 
 import pymupdf
 
@@ -96,6 +101,12 @@ def lees(pdf, ruimte):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf")
-    ap.add_argument("--ruimte", default="", help="E-ruimte zoals in de app, bv. 3KV")
+    ap.add_argument("--ruimte", default="", help="E-ruimte, exact zoals de naam in de app")
     a = ap.parse_args()
-    print(json.dumps(lees(a.pdf, a.ruimte), ensure_ascii=False, indent=2))
+    v = lees(a.pdf, a.ruimte)
+    w = csv.writer(sys.stdout)
+    w.writerow(["verdeler", "ruimte", "tekening", "veld", "nr", "tag", "omschrijving", "schema"])
+    for f in v["velden"]:
+        for u in f["uitgangen"]:
+            w.writerow([v["naam"], v["ruimte"], v["tekening"], f["veld"], u["nr"],
+                        u["tag"], u["omschrijving"], u["schema"]])

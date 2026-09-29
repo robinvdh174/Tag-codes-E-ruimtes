@@ -50,6 +50,11 @@ const ROOM_INFO = {
   "NICO-O":            "Gelijkvloers, links van Nico (AZ) trapje omhoog"
 };
 
+// Verdeler-overzichten: lokaal gecachet (ook offline beschikbaar), vers
+// opgehaald via syncVerdelers(). Zie _bouwVerdelers voor de structuur.
+const VERDELERS_KEY = "ekast-verdelers";
+let VERDELERS = [];
+
 // Laad eerder toegevoegde/aangepaste ruimtes uit localStorage en voeg toe
 // aan ROOM_INFO. Opgeslagen waarden gaan vóór op de ingebouwde defaults,
 // zodat een via het beheer aangepaste beschrijving ook na een reload
@@ -542,12 +547,43 @@ async function sheetAction(params) {
 function manualSync() {
   if (!SCRIPT_URL) { showToast("Geen SCRIPT_URL ingesteld!", true); return; }
   processQueue().then(function() { syncFromSheets(false); });
+  syncVerdelers();
 }
 
 // ============================================================
 // RUIMTES SYNCHEN — haalt custom ruimtes op uit Sheets
 // en deelt ze met alle toestellen
 // ============================================================
+// Verdelers ophalen uit het tabblad "Verdelers" van de sheet. Een oudere
+// Apps Script-deployment kent de actie nog niet ({error}) → cache behouden.
+function _laadVerdelerCache() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(VERDELERS_KEY) || "[]");
+    VERDELERS = _bouwVerdelers(rows);
+  } catch(e) { VERDELERS = []; }
+  _verdelerIdx = null;
+}
+async function syncVerdelers() {
+  if (!SCRIPT_URL) return;
+  try {
+    const resp = await fetchWithTimeout(
+      SCRIPT_URL + "?action=getVerdelers&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
+      15000
+    );
+    if (!resp || !resp.ok) return;
+    const rows = await resp.json();
+    if (!Array.isArray(rows)) return;
+    const nieuw = JSON.stringify(rows);
+    if (nieuw === (localStorage.getItem(VERDELERS_KEY) || "[]")) return;
+    try { localStorage.setItem(VERDELERS_KEY, nieuw); } catch(e) { console.warn("Verdelers opslaan mislukt:", e); }
+    VERDELERS = _bouwVerdelers(rows);
+    _verdelerIdx = null;
+    refreshUI();
+  } catch(e) {
+    console.warn("syncVerdelers mislukt:", e);
+  }
+}
+
 async function syncRooms() {
   if (!SCRIPT_URL) return;
   try {
@@ -636,6 +672,7 @@ function applyRoomRename(oldName, newName) {
 // INITIALISATIE
 // ============================================================
 async function init() {
+  _laadVerdelerCache();
   closeInfoPopup();
   updateTotalCount();
   movePill("search");
@@ -716,6 +753,7 @@ async function init() {
   updatePendingBadge();
   processQueue().then(function() { syncFromSheets(false); });
   syncRooms();
+  syncVerdelers();
   // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
   // wanneer de app op de achtergrond staat of het scherm uit is.
   syncTimer = setInterval(function() {
@@ -939,9 +977,43 @@ function _scoreItem(d, qNormCode, qNormText) {
 }
 
 // ============================================================
-// VERDELERS — indelingstekeningen (verdelers.js): welke uitgang
-// (tag) in welk veld van welke verdeler zit, met schemanummer.
+// VERDELERS — indelingstekeningen: welke uitgang (tag) in welk veld
+// van welke verdeler zit, met schemanummer. De gegevens komen uit het
+// tabblad "Verdelers" van de sheet (zie syncVerdelers) en staan bewust
+// NIET in de code: repo en website zijn openbaar.
 // ============================================================
+// Sheet-rijen (één per uitgang) → [{naam, ruimte, tekening, velden:[{veld,
+// uitgangen:[{nr, tag, omschrijving, schema}]}]}]. Volgorde van de rijen
+// = volgorde van verdelers en velden (links → rechts op de tekening).
+function _bouwVerdelers(rows) {
+  const lijst = [];
+  const perNaam = {};
+  (Array.isArray(rows) ? rows : []).forEach(function(r) {
+    const naam = String(r.verdeler || "").trim();
+    let veld = String(r.veld == null ? "" : r.veld).trim();
+    // Sheets maakt van "+03" graag het getal 3 → terug naar "+03".
+    if (/^\d+$/.test(veld)) veld = "+" + (veld.length < 2 ? "0" + veld : veld);
+    if (!naam || !veld) return;
+    let v = perNaam[naam];
+    if (!v) {
+      v = perNaam[naam] = { naam: naam, ruimte: "", tekening: "", velden: [], _veld: {} };
+      lijst.push(v);
+    }
+    if (!v.ruimte && r.ruimte) v.ruimte = String(r.ruimte).trim();
+    if (!v.tekening && r.tekening) v.tekening = String(r.tekening).trim();
+    let f = v._veld[veld];
+    if (!f) { f = v._veld[veld] = { veld: veld, uitgangen: [] }; v.velden.push(f); }
+    f.uitgangen.push({
+      nr: String(r.nr || "").trim(),
+      tag: String(r.tag || "").trim().replace(/^=/, ""),
+      omschrijving: String(r.omschrijving || "").trim(),
+      schema: String(r.schema || "").trim()
+    });
+  });
+  lijst.forEach(function(v) { delete v._veld; });
+  return lijst;
+}
+
 // Platte lijst van alle uitgangen, lui opgebouwd (VERDELERS is statisch).
 let _verdelerIdx = null;
 function _verdelerUitgangen() {
@@ -949,7 +1021,7 @@ function _verdelerUitgangen() {
   _verdelerIdx = [];
   const lijst = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
   lijst.forEach(function(v) {
-    // "MCC 21B4" → "21B4": de veldcode op de tekening is =21B4+02.
+    // "MCC 12X3" → "12X3": de veldcode op de tekening is =12X3+02.
     const kort = String(v.naam || "").split(" ").pop();
     (v.velden || []).forEach(function(f) {
       (f.uitgangen || []).forEach(function(u) {
@@ -966,7 +1038,7 @@ function _verdelerUitgangen() {
 }
 
 // Zoekt de uitgang die bij een kastcode hoort. Exact (genormaliseerd), of
-// de kastcode begint met de tag (bv. kast "106A40P3.M1-M1", tag "106A40P3.M1").
+// de kastcode begint met de tag (bv. kast "123A45P6.M1-M1", tag "123A45P6.M1").
 function _findUitgang(code) {
   const n = _normCode(code);
   if (!n) return null;
@@ -991,8 +1063,8 @@ function _scoreUitgang(e, qNormCode, qNormText) {
       const idx = e.tagNorm.indexOf(qNormCode);
       if (idx !== -1 && qNormCode.length >= 3) return 800 - idx;
     }
-    // Veldcode "21B4+02" — pas matchen als er méér dan de verdelernaam
-    // getypt is, anders geeft "21B4" alle uitgangen (daarvoor is er de
+    // Veldcode "12X3+02" — pas matchen als er méér dan de verdelernaam
+    // getypt is, anders geeft "12X3" alle uitgangen (daarvoor is er de
     // verdelerkaart).
     if (qNormCode.length > e.kortNorm.length && e.veldNorm.indexOf(qNormCode) === 0) return 850;
     const sch = _normCode(u.schema);
@@ -1003,7 +1075,7 @@ function _scoreUitgang(e, qNormCode, qNormText) {
   return -1;
 }
 
-// Verdelers waarvan de naam matcht ("MCC 21B4", "21b4", "mcc").
+// Verdelers waarvan de naam matcht ("MCC 12X3", "12x3", "mcc").
 function _matchVerdelers(qNormCode) {
   if (!qNormCode || qNormCode.length < 3) return [];
   const lijst = typeof VERDELERS !== "undefined" && Array.isArray(VERDELERS) ? VERDELERS : [];
@@ -2101,7 +2173,7 @@ function _veldLabel(e) {
       ? " (" + e.uitgang.nr + ")" : "");
 }
 
-// Knop op een kastkaart: "🔌 MCC 21B4 · veld +02 · E-070-1596".
+// Knop op een kastkaart: "🔌 MCC 12X3 · veld +02 · <schemanummer>".
 function _makeVerdelerLink(e) {
   const btn = _el("button", "verdeler-link");
   btn.type = "button";
@@ -2167,7 +2239,7 @@ function makeUitgangCard(e) {
   return card;
 }
 
-// Zoekresultaat voor een verdeler zelf ("21B4", "MCC 21B4").
+// Zoekresultaat voor een verdeler zelf ("12X3", "MCC 12X3").
 function makeVerdelerCard(v) {
   const card = _el("div", "card card-verdeler");
   _clickable(card, function() { openKastfront(v, null); });
