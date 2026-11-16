@@ -1781,9 +1781,6 @@ async function setStatus(id, newStatus, naam, datum, opts) {
 function renderList() {
   // Ruimte-keuze: één knop i.p.v. een lange rij chips om horizontaal door
   // te scrollen. De knop opent een kiesvenster met zoekveld (openRoomPicker).
-  if (activeRoom !== "all" && !data.some(function(d) { return d.location === activeRoom; })) {
-    activeRoom = "all";
-  }
   _updateRoomPickButton();
   showFiltered();
 }
@@ -1833,12 +1830,15 @@ function openRoomPicker() {
   inp.value = "";
   renderRoomPickList();
   modal.classList.add("open");
-  const list = document.getElementById("roomPickList");
-  if (list) list.scrollTop = 0;
   // Geen autofocus: op de gsm zou het toetsenbord de halve lijst verbergen,
   // terwijl men vaak gewoon wil scrollen en tikken.
-  const act = list && list.querySelector(".room-pick-item.active");
-  if (act && act.scrollIntoView) act.scrollIntoView({ block: "center" });
+  // Gekozen ruimte in beeld brengen. Bewust geen scrollIntoView: dat scrollt
+  // ook de pagina achter het venster mee.
+  const list = document.getElementById("roomPickList");
+  if (!list) return;
+  list.scrollTop = 0;
+  const act = list.querySelector(".room-pick-item.active");
+  if (act) list.scrollTop = Math.max(0, act.offsetTop - list.offsetTop - list.clientHeight / 2 + act.offsetHeight / 2);
 }
 
 function closeRoomPicker() {
