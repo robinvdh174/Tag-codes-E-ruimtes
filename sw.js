@@ -1,5 +1,10 @@
 importScripts("./version.js");
 const CACHE_NAME = "ekast-" + APP_VERSION;
+// Aparte cache voor de scan-bibliotheek (~16 MB). Die bestanden wijzigen
+// niet per app-versie; in de versie-cache werden ze bij elke update gewist,
+// zodat de eerstvolgende scan alles opnieuw moest downloaden (en zonder
+// bereik mislukte). Naam enkel ophogen als vendor/tesseract/ zelf wijzigt.
+const VENDOR_CACHE = "ekast-vendor-tesseract-1";
 const ASSETS = [
   "./index.html",
   "./style.css",
@@ -42,7 +47,7 @@ self.addEventListener("activate", function(e) {
   e.waitUntil(
     caches.keys().then(function(keys) {
       return Promise.all(
-        keys.filter(function(k) { return k !== CACHE_NAME; })
+        keys.filter(function(k) { return k !== CACHE_NAME && k !== VENDOR_CACHE; })
             .map(function(k) { return caches.delete(k); })
       );
     })
@@ -82,9 +87,9 @@ self.addEventListener("fetch", function(e) {
         return fetch(e.request).then(function(response) {
           if (response && response.ok) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then(function(cache) {
-              cache.put(e.request, clone);
-            });
+            caches.open(VENDOR_CACHE).then(function(cache) {
+              return cache.put(e.request, clone);
+            }).catch(function(err) { console.warn("Vendor-cache fout:", err); });
           }
           return response;
         });

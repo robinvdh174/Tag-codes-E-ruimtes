@@ -177,7 +177,10 @@ try {
   } catch(e) { console.warn("Ruimte-hernoemingen (migratie) laden mislukt:", e); }
   let changed = false;
   data.forEach(function(item) {
-    if (renames[item.location]) { item.location = renames[item.location]; changed = true; }
+    // Ketens volgen (A -> B en later B -> C), met een grens tegen lussen.
+    let loc = item.location, hops = 0;
+    while (renames[loc] && renames[loc] !== loc && hops++ < 10) loc = renames[loc];
+    if (loc !== item.location) { item.location = loc; changed = true; }
   });
   if (changed) {
     try { localStorage.setItem("ekast-data", JSON.stringify(data)); } catch(e) { console.warn("Lokale data opslaan mislukt:", e); }
@@ -308,6 +311,8 @@ function updatePendingBadge() {
 let _isProcessingQueue = false;
 async function processQueue() {
   if (_isProcessingQueue || !SCRIPT_URL) return;
+  // Zonder verbinding heeft proberen geen zin.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   const queue = getQueue();
   if (queue.length === 0) return;
   _isProcessingQueue = true;
@@ -325,7 +330,13 @@ async function processQueue() {
           const updResult = await sheetAction({ action: "update", data: JSON.stringify(entry.data) });
           if (updResult && updResult.conflict) {
             dequeue(entry.queueId);
-            await handleConflictResult(updResult, entry.data);
+            try {
+              await handleConflictResult(updResult, entry.data);
+            } catch(ce) {
+              // "Mijn versie bewaren" gekozen maar versturen mislukte:
+              // terug in de wachtrij i.p.v. de keuze stil te verliezen.
+              enqueue("update", entry.data, entry.logInfo);
+            }
             break;
           }
           if (updResult && updResult.lastModified) {
@@ -346,6 +357,18 @@ async function processQueue() {
           await logAction(entry.logInfo.label, entry.data.code || "", entry.data.location || "", entry.logInfo.sheet || "Logboek");
         }
       } catch(e) {
+        const msg = (e && e.message) || "";
+        const fromServer = !!(e && e.server);
+        if (fromServer && /niet gevonden/i.test(msg) && (entry.action === "delete" || entry.action === "update")) {
+          // De kast bestaat niet meer op de server (intussen verwijderd door
+          // een ander toestel). Een delete is daarmee geslaagd; een update
+          // is zinloos geworden. Niet 10 rondes lang de wachtrij blokkeren.
+          dequeue(entry.queueId);
+          if (entry.action === "update") {
+            showToast("Wijziging vervallen: " + (entry.data.code || "kast") + " is intussen verwijderd.", true);
+          }
+          continue;
+        }
         if ((entry.action === "updateRoom" || entry.action === "addRoom") && isPermanentServerError(e)) {
           // De server weigert deze ruimte-actie; opnieuw proberen helpt niet
           // en zou de rest van de queue blokkeren. Weggooien en melden.
@@ -354,6 +377,12 @@ async function processQueue() {
           syncRooms();
           continue;
         }
+        // Netwerkfout, time-out, HTTP 5xx, "Server bezet" of een verkeerd
+        // token: de actie zelf is in orde, dus bewaren en later opnieuw
+        // proberen zonder de teller op te hogen. Voorheen telde elke
+        // mislukte poging mee en ging een offline wijziging na 10 pogingen
+        // zonder bereik definitief verloren.
+        if (!(fromServer || /^HTTP 4/.test(msg)) || /bezet|ongeautoriseerd/i.test(msg)) break;
         entry.retries = (entry.retries || 0) + 1;
         if (entry.retries > 10) {
           dequeue(entry.queueId);
@@ -371,8 +400,7 @@ async function processQueue() {
   }
   updatePendingBadge();
   if (getQueueLength() === 0) {
-    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    setSyncedStatus();
   }
 }
 
@@ -386,6 +414,14 @@ function setSyncStatus(state, label) {
   badge.className = "sync-badge " + state;
   lbl.textContent = label;
 }
+// "Gesync HH:MM" — maar zolang er nog acties in de offline-wachtrij staan
+// tonen we dát: anders lijkt alles verstuurd terwijl er nog iets wacht.
+function setSyncedStatus(extra) {
+  const n = getQueueLength();
+  if (n > 0) { setSyncStatus("offline", n + " wachtend"); return; }
+  const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
+  setSyncStatus("ok", "Gesync " + now + (extra || ""));
+}
 
 // ============================================================
 // SYNC: LEZEN — haalt alle data op uit Sheets
@@ -395,7 +431,12 @@ async function fetchWithTimeout(url, ms, opts) {
   const timer = setTimeout(function() { ctrl.abort(); }, ms);
   try {
     const resp = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {}));
-    return resp;
+    // Ook het binnenhalen van de body valt onder de timeout. Voorheen liep
+    // de timer enkel tot de headers: bleef de body hangen (zwak signaal),
+    // dan bleef _isReading voorgoed true en stopte de auto-sync tot een
+    // herstart van de app.
+    const text = await resp.text();
+    return { ok: resp.ok, status: resp.status, json: async function() { return JSON.parse(text); } };
   } finally {
     clearTimeout(timer);
   }
@@ -408,11 +449,18 @@ async function syncFromSheets(silent) {
   let attempt = 0;
   while (attempt < 2) {
     attempt++;
+    const seq = _writeSeq;
     try {
       const resp = await fetchWithTimeout(SCRIPT_URL + "?action=get&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(), 25000);
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const json = await resp.json();
       if (json.error) throw new Error(json.error);
+      if (seq !== _writeSeq) {
+        // Tijdens het ophalen is er geschreven: antwoord mogelijk verouderd.
+        _isReading = false;
+        _resyncSoon();
+        return;
+      }
       if (Array.isArray(json) && json.length > 0) {
         // Bewaar statusBy/statusDate uit lokale data als de server die velden niet kent.
         // Records met pending writes (in-flight én in queue) worden NIET met serverdata
@@ -454,8 +502,7 @@ async function syncFromSheets(silent) {
           saveLocal();
           refreshUI();
         }
-        const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-        setSyncStatus("ok", "Gesync " + now);
+        setSyncedStatus();
       } else if (Array.isArray(json) && json.length === 0) {
         // Server gaf [] terug. Als we lokaal records hebben is dit verdacht
         // (tijdelijke fout of timeout) — niet destructief wissen, data
@@ -464,8 +511,7 @@ async function syncFromSheets(silent) {
           if (!silent) showToast("Server gaf lege lijst terug. Lokale data behouden.", true);
           setSyncStatus("offline", "Server leeg — lokale data behouden");
         } else {
-          const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-          setSyncStatus("ok", "Gesync " + now + " (leeg)");
+          setSyncedStatus(" (leeg)");
         }
       } else {
         setSyncStatus("offline", "Ongeldig antwoord");
@@ -512,11 +558,26 @@ function deduplicateById(arr) {
 // vallen we voor de rest van de sessie terug op het oude GET-pad.
 // ============================================================
 let _postSupported = true;
+// Teller die ophoogt bij de start en het einde van elke schrijfactie op de
+// kasten. syncFromSheets negeert een antwoord waarbij onderweg geschreven
+// is: dat kan de toestand van vóór de wijziging bevatten en zou bv. een
+// net veiliggestelde kast tot de volgende sync weer "In bedrijf" tonen.
+let _writeSeq = 0;
+let _resyncTimer = null;
+function _resyncSoon() {
+  clearTimeout(_resyncTimer);
+  _resyncTimer = setTimeout(function() {
+    if (_isWriting) { _resyncSoon(); return; }
+    syncFromSheets(true);
+  }, 2000);
+}
 
 async function sheetAction(params) {
   if (!SCRIPT_URL) return false;
   // Blokkeer auto-sync terwijl we schrijven, anders overschrijft die onze nieuwe data
   _isWriting = true;
+  const mutates = params.action === "add" || params.action === "update" || params.action === "delete";
+  if (mutates) _writeSeq++;
   try {
     if (_postSupported) {
       const body = JSON.stringify(Object.assign({}, params, { token: API_TOKEN }));
@@ -547,6 +608,7 @@ async function sheetAction(params) {
     if (json.error) throw serverError(json.error);
     return json;
   } finally {
+    if (mutates) _writeSeq++;
     _isWriting = false;
   }
 }
@@ -568,6 +630,7 @@ function manualSync() {
   if (!SCRIPT_URL) { showToast("Geen SCRIPT_URL ingesteld!", true); return; }
   processQueue().then(function() { syncFromSheets(false); });
   syncVerdelers();
+  syncRooms();
 }
 
 // ============================================================
@@ -690,8 +753,12 @@ function applyRoomRename(oldName, newName) {
   // Hernoeming onthouden (oud -> nieuw) voor toekomstige reloads.
   try {
     const renames = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
-    if (renames[oldName] !== newName) {
+    if (renames[oldName] !== newName || renames.hasOwnProperty(newName)) {
       renames[oldName] = newName;
+      // De nieuwe naam is (weer) in gebruik: een oudere hernoeming die
+      // deze naam wegstuurde (A -> B, later B -> A) mag niet blijven staan,
+      // anders verdwijnt de ruimte bij elke herstart tot de eerste sync.
+      delete renames[newName];
       localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
     }
   } catch(e) { console.warn("Hernoeming onthouden mislukt:", e); }
@@ -799,8 +866,13 @@ async function init() {
   syncVerdelers();
   // Auto-sync alleen wanneer de tab zichtbaar is — bespaart batterij/data
   // wanneer de app op de achtergrond staat of het scherm uit is.
+  // Eerst de offline-wachtrij: voorheen werd die enkel verwerkt bij het
+  // (her)openen van de app of het "online"-event, zodat een wijziging die
+  // door een time-out in de wachtrij belandde bleef staan zolang de app
+  // gewoon open stond.
   syncTimer = setInterval(function() {
-    if (document.visibilityState === "visible") syncFromSheets(true);
+    if (document.visibilityState !== "visible") return;
+    processQueue().then(function() { syncFromSheets(true); });
   }, SYNC_INTERVAL_MS);
   _initAdminTrigger();
 }
@@ -1763,8 +1835,7 @@ async function setStatus(id, newStatus, naam, datum, opts) {
       const ix = data.findIndex(function(d) { return d.id === id; });
       if (ix !== -1) { data[ix].lastModified = result.lastModified; delete data[ix].expectedLastModified; saveLocal(); }
     }
-    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    setSyncedStatus();
     await logAction(logLabel, updatedItem.code, updatedItem.location, "Logboek Status");
     _pendingIds.delete(id);
   } catch(e) {
@@ -1985,8 +2056,7 @@ async function _saveNewEntry(code, loc, position, note) {
     await logAction("Toegevoegd", newItem.code, newItem.location, "Logboek Toevoegingen");
     showToast("Kast toegevoegd!");
     _pendingIds.delete(newItem.id);
-    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    setSyncedStatus();
   } catch(e) {
     _pendingIds.delete(newItem.id);
     enqueue("add", newItem);
@@ -2077,8 +2147,7 @@ async function saveEdit() {
     }
     showToast("Opgeslagen!");
     _pendingIds.delete(id);
-    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    setSyncedStatus();
     await logAction("Bewerkt", updatedItem.code, updatedItem.location, "Logboek Bewerkingen");
   } catch(e) {
     _pendingIds.delete(id);
@@ -2114,8 +2183,7 @@ async function deleteEntry(id) {
     if (!result) throw new Error("Geen antwoord van server");
     if (result.error) throw new Error(result.error);
     _pendingIds.delete(id);
-    const now = new Date().toLocaleTimeString("nl-NL", {hour:"2-digit", minute:"2-digit"});
-    setSyncStatus("ok", "Gesync " + now);
+    setSyncedStatus();
     await logAction("Verwijderd", removedItem.code || "", removedItem.location || "", "Logboek Verwijderingen");
   } catch(e) {
     _pendingIds.delete(id);
@@ -2193,7 +2261,8 @@ function showToast(msg, err) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.className = "toast show" + (err ? " error" : "");
-  setTimeout(function() { t.classList.remove("show"); }, 2500);
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(function() { t.classList.remove("show"); }, 2500);
 }
 
 // ============================================================
@@ -4680,14 +4749,21 @@ if ("serviceWorker" in navigator) {
   // Bij elke pageload: vraag de actieve SW een update-check te doen.
   // Anders pickt iOS Safari nieuwe SW-versies pas op na 24u (max-age).
   navigator.serviceWorker.ready.then(function(reg) {
-    try { reg.update(); } catch (e) {}
+    // update() geeft een promise die offline afgewezen wordt — opvangen,
+    // anders een onafgehandelde fout bij elke start zonder bereik.
+    try { reg.update().catch(function() {}); } catch (e) {}
   });
 
   // Wanneer de nieuwe SW de controle overneemt (na bevestiging via de
   // banner) herladen we zodat de page de nieuwe app.js krijgt.
   // Eén keer per pageload — anders krijg je een refresh-loop.
+  // Niet bij de allereerste installatie: daar neemt de SW de pagina over
+  // via clients.claim() en zou een herlaad het PIN-/registratiescherm
+  // wissen terwijl de gebruiker het aan het invullen is.
+  const _hadSwController = !!navigator.serviceWorker.controller;
   let _swReloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", function() {
+    if (!_hadSwController) return;
     if (_swReloaded) return;
     _swReloaded = true;
     console.info("Nieuwe app-versie geactiveerd — herladen…");

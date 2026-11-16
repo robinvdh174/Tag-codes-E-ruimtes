@@ -71,7 +71,7 @@ function handleRequest_(params) {
 }
 
 function dispatch_(action, params) {
-  if (action === "version")  return { version: "v3", ok: true };
+  if (action === "version")  return { version: "v4", ok: true };
   if (action === "get")      return handleGet();
   if (action === "add")      return handleAdd(params.data);
   if (action === "update")   return handleUpdate(params.data);
@@ -172,9 +172,28 @@ function handleGet() {
 function handleAdd(dataParam) {
   if (!dataParam) throw new Error("Geen data voor add");
   var item = JSON.parse(dataParam);
+  var sheet = getOrCreateSheet();
+  // Idempotent: komt dezelfde kast (id) een tweede keer binnen — de app
+  // herhaalt een add na een time-out terwijl de eerste poging toch gelukt
+  // was — dan geen dubbele rij maken. Een dubbele rij is niet meer weg te
+  // krijgen: update en delete raken telkens alleen de eerste.
+  var lastRow = sheet.getLastRow();
+  if (item.id && lastRow >= 2) {
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var idCol = hdrs.indexOf("id");
+    var lmCol = hdrs.indexOf("lastModified");
+    if (idCol !== -1) {
+      var idValues = sheet.getRange(2, idCol + 1, lastRow - 1, 1).getValues();
+      for (var i = 0; i < idValues.length; i++) {
+        if (String(idValues[i][0]) === String(item.id)) {
+          var lm = lmCol === -1 ? "" : cellToString(sheet.getRange(i + 2, lmCol + 1).getValue());
+          return { success: true, action: "add", id: item.id, lastModified: lm, existing: true };
+        }
+      }
+    }
+  }
   var newLM = new Date().toISOString();
   item.lastModified = newLM;
-  var sheet = getOrCreateSheet();
   var row = HEADERS.map(function(h) {
     return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
   });
@@ -256,7 +275,10 @@ function handleDelete(id) {
 function handleLog(params) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   // Apps Script decodeert e.parameter automatisch — geen extra decodeURIComponent nodig.
-  var sheetName = params.sheet || "Logboek";
+  var sheetName = String(params.sheet || "Logboek");
+  // Enkel logboek-tabbladen: zonder deze controle kon een log-aanroep rijen
+  // toevoegen aan gelijk welk tabblad (bv. "Kasten" of "Geblokkeerd").
+  if (!/^Logboek( [A-Za-z]+)?$/.test(sheetName)) sheetName = "Logboek";
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
