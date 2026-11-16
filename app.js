@@ -346,6 +346,14 @@ async function processQueue() {
           await logAction(entry.logInfo.label, entry.data.code || "", entry.data.location || "", entry.logInfo.sheet || "Logboek");
         }
       } catch(e) {
+        if ((entry.action === "updateRoom" || entry.action === "addRoom") && isPermanentServerError(e)) {
+          // De server weigert deze ruimte-actie; opnieuw proberen helpt niet
+          // en zou de rest van de queue blokkeren. Weggooien en melden.
+          dequeue(entry.queueId);
+          showToast("Ruimte-wijziging geweigerd door de server: " + e.message, true);
+          syncRooms();
+          continue;
+        }
         entry.retries = (entry.retries || 0) + 1;
         if (entry.retries > 10) {
           dequeue(entry.queueId);
@@ -526,7 +534,7 @@ async function sheetAction(params) {
         _postSupported = false;
         console.warn("Server-deployment ondersteunt geen POST — terugvallen op GET. Herdeploy Code.gs.");
       } else {
-        if (json.error) throw new Error(json.error);
+        if (json.error) throw serverError(json.error);
         return json;
       }
     }
@@ -536,11 +544,23 @@ async function sheetAction(params) {
     const resp = await fetchWithTimeout(url, 25000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const json = await resp.json();
-    if (json.error) throw new Error(json.error);
+    if (json.error) throw serverError(json.error);
     return json;
   } finally {
     _isWriting = false;
   }
+}
+
+// Fout die de server zélf teruggaf (bv. "Onbekende actie" bij een
+// verouderde Code.gs-deployment), i.t.t. een netwerkfout. Zo'n fout lost
+// opnieuw proberen niet op — behalve "Server bezet" (script-lock).
+function serverError(msg) {
+  const e = new Error(msg);
+  e.server = true;
+  return e;
+}
+function isPermanentServerError(e) {
+  return !!(e && e.server && !/bezet/i.test(e.message || ""));
 }
 
 // Handmatige sync via klik op badge
@@ -584,8 +604,27 @@ async function syncVerdelers() {
   }
 }
 
+// Teller die elke lokale ruimte-wijziging ophoogt. syncRooms negeert een
+// antwoord dat al onderweg was vóór zo'n wijziging: anders zet een trage
+// getRooms-respons (Apps Script doet er soms seconden over) de oude naam/
+// beschrijving terug over een net opgeslagen wijziging.
+let _roomEditSeq = 0;
+// Ruimtenamen die nog niet bij de server zijn (lopende of wachtende
+// addRoom/updateRoom): die mag de serverversie niet overschrijven.
+const _pendingRoomNames = new Set();
+function _roomNamesPending() {
+  const names = new Set(_pendingRoomNames);
+  getQueue().forEach(function(q) {
+    if (!q.data) return;
+    if (q.action === "updateRoom") { names.add(q.data.oldName); names.add(q.data.newName); }
+    else if (q.action === "addRoom") names.add(q.data.name);
+  });
+  return names;
+}
+
 async function syncRooms() {
   if (!SCRIPT_URL) return;
+  const seq = _roomEditSeq;
   try {
     const resp = await fetchWithTimeout(
       SCRIPT_URL + "?action=getRooms&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
@@ -594,9 +633,12 @@ async function syncRooms() {
     if (!resp || !resp.ok) return;
     const rooms = await resp.json();
     if (!Array.isArray(rooms)) return;
+    if (seq !== _roomEditSeq) return; // verouderd antwoord, zie _roomEditSeq
+    const pending = _roomNamesPending();
     let listChanged = false;
     rooms.forEach(function(r) {
       if (!r.name) return;
+      if (pending.has(r.name) || (r.renamedFrom && pending.has(r.renamedFrom))) return;
       // Een hernoemde ruimte (server bewaart de oude naam in renamedFrom):
       // ruim de oude naam lokaal op en migreer kasten + actieve filter.
       const from = (r.renamedFrom || "").trim();
@@ -2433,6 +2475,8 @@ async function saveEditRoom() {
   }
 
   // Lokaal toepassen.
+  const oldDesc = ROOM_INFO[oldName] || "";
+  _roomEditSeq++;
   if (renamed) {
     applyRoomRename(oldName, newName);
   }
@@ -2446,26 +2490,71 @@ async function saveEditRoom() {
   closeEditRoomModal();
   renderRoomsList();
   renderList();
-  showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
 
-  // Naar de server sturen; bij netwerkfout in de offline-queue plaatsen.
-  if (SCRIPT_URL) {
-    const payload = { oldName: oldName, newName: newName, desc: desc };
-    try {
-      const res = await sheetAction(Object.assign({ action: "updateRoom" }, payload));
-      if (res && res.error) {
-        showToast("Server: " + res.error, true);
-      } else {
-        await logAction(
-          renamed ? ("Ruimte hernoemd: " + oldName + " -> " + newName) : ("Ruimte-beschrijving gewijzigd: " + newName),
-          "", newName, "Logboek"
-        );
-      }
-    } catch(e) {
+  if (!SCRIPT_URL) {
+    showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
+    return;
+  }
+
+  // Naar de server sturen. Netwerkfout → offline-queue. Weigert de server
+  // de wijziging (bv. een verouderde Code.gs-deployment), dan de lokale
+  // wijziging terugdraaien en dat duidelijk melden: anders lijkt het
+  // gelukt, tot de volgende sync de oude tekst stilletjes terugzet.
+  const payload = { oldName: oldName, newName: newName, desc: desc };
+  _pendingRoomNames.add(oldName);
+  _pendingRoomNames.add(newName);
+  try {
+    await sheetAction(Object.assign({ action: "updateRoom" }, payload));
+    showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
+    await logAction(
+      renamed ? ("Ruimte hernoemd: " + oldName + " -> " + newName) : ("Ruimte-beschrijving gewijzigd: " + newName),
+      "", newName, "Logboek"
+    );
+  } catch(e) {
+    if (isPermanentServerError(e)) {
+      revertRoomEdit(oldName, newName, oldDesc);
+      showToast("Niet opgeslagen — de server weigerde de wijziging: " + e.message +
+        (/onbekende actie/i.test(e.message) ? " (Code.gs opnieuw deployen in Apps Script.)" : ""), true);
+    } else {
       console.warn("Ruimte-update sync mislukt, in queue gezet:", e);
       enqueue("updateRoom", payload);
+      showToast("Geen verbinding — wijziging wordt later doorgestuurd.");
     }
+  } finally {
+    _pendingRoomNames.delete(oldName);
+    _pendingRoomNames.delete(newName);
   }
+}
+
+// Draai een lokaal toegepaste ruimte-wijziging terug (de server weigerde ze).
+function revertRoomEdit(oldName, newName, oldDesc) {
+  _roomEditSeq++;
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    if (newName !== oldName) delete stored[newName];
+    stored[oldName] = oldDesc;
+    localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+  } catch(e) { console.warn("Ruimte terugzetten in localStorage mislukt:", e); }
+  if (newName !== oldName) {
+    delete ROOM_INFO[newName];
+    try {
+      const renames = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
+      if (renames[oldName] === newName) {
+        delete renames[oldName];
+        localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
+      }
+    } catch(e) { console.warn("Hernoeming terugdraaien mislukt:", e); }
+    let dataChanged = false;
+    data.forEach(function(item) {
+      if (item.location === newName) { item.location = oldName; dataChanged = true; }
+    });
+    if (dataChanged) saveLocal();
+    if (activeRoom === newName) activeRoom = oldName;
+  }
+  ROOM_INFO[oldName] = oldDesc;
+  const rm = document.getElementById("roomsModal");
+  if (rm && rm.classList.contains("open")) renderRoomsList();
+  renderList();
 }
 
 // ============================================================
