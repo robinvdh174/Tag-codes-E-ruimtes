@@ -92,7 +92,14 @@
 
   <!-- LIJST -->
   <div id="tab-list" class="panel" role="tabpanel" aria-labelledby="tbtn-list">
-    <div class="filter" id="roomFilter"></div>
+    <div class="room-pick-bar">
+      <button class="room-pick-btn" id="roomPickBtn" type="button" aria-haspopup="dialog">
+        <span class="room-pick-label">Ruimte</span>
+        <span class="room-pick-value" id="roomPickValue">Alle ruimtes</span>
+        <span class="room-pick-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      <button class="room-pick-clear" id="roomPickClear" type="button" aria-label="Toon alle ruimtes" hidden>&times;</button>
+    </div>
     <div id="listResults" class="card-grid"></div>
   </div>
 
@@ -240,6 +247,18 @@
     <div id="roomsList"></div>
     <div class="modal-btns" style="margin-top:1.2rem;">
       <button class="btn-cancel" type="button" id="roomsCloseBtn">&larr; Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ruimte kiezen (Lijst-tab) -->
+<div class="modal-overlay" id="roomPickModal" role="dialog" aria-modal="true" aria-labelledby="roomPickTitle">
+  <div class="modal room-pick-modal">
+    <div class="modal-title" id="roomPickTitle">Kies een ruimte</div>
+    <input type="text" id="roomPickSearch" placeholder="Zoek ruimte…" autocomplete="off" aria-label="Zoek ruimte">
+    <div class="room-pick-list" id="roomPickList" role="listbox" aria-labelledby="roomPickTitle"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" type="button" id="roomPickCloseBtn">Sluiten</button>
     </div>
   </div>
 </div>

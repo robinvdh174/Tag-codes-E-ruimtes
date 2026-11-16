@@ -346,6 +346,14 @@ async function processQueue() {
           await logAction(entry.logInfo.label, entry.data.code || "", entry.data.location || "", entry.logInfo.sheet || "Logboek");
         }
       } catch(e) {
+        if ((entry.action === "updateRoom" || entry.action === "addRoom") && isPermanentServerError(e)) {
+          // De server weigert deze ruimte-actie; opnieuw proberen helpt niet
+          // en zou de rest van de queue blokkeren. Weggooien en melden.
+          dequeue(entry.queueId);
+          showToast("Ruimte-wijziging geweigerd door de server: " + e.message, true);
+          syncRooms();
+          continue;
+        }
         entry.retries = (entry.retries || 0) + 1;
         if (entry.retries > 10) {
           dequeue(entry.queueId);
@@ -526,7 +534,7 @@ async function sheetAction(params) {
         _postSupported = false;
         console.warn("Server-deployment ondersteunt geen POST — terugvallen op GET. Herdeploy Code.gs.");
       } else {
-        if (json.error) throw new Error(json.error);
+        if (json.error) throw serverError(json.error);
         return json;
       }
     }
@@ -536,11 +544,23 @@ async function sheetAction(params) {
     const resp = await fetchWithTimeout(url, 25000);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const json = await resp.json();
-    if (json.error) throw new Error(json.error);
+    if (json.error) throw serverError(json.error);
     return json;
   } finally {
     _isWriting = false;
   }
+}
+
+// Fout die de server zélf teruggaf (bv. "Onbekende actie" bij een
+// verouderde Code.gs-deployment), i.t.t. een netwerkfout. Zo'n fout lost
+// opnieuw proberen niet op — behalve "Server bezet" (script-lock).
+function serverError(msg) {
+  const e = new Error(msg);
+  e.server = true;
+  return e;
+}
+function isPermanentServerError(e) {
+  return !!(e && e.server && !/bezet/i.test(e.message || ""));
 }
 
 // Handmatige sync via klik op badge
@@ -584,8 +604,27 @@ async function syncVerdelers() {
   }
 }
 
+// Teller die elke lokale ruimte-wijziging ophoogt. syncRooms negeert een
+// antwoord dat al onderweg was vóór zo'n wijziging: anders zet een trage
+// getRooms-respons (Apps Script doet er soms seconden over) de oude naam/
+// beschrijving terug over een net opgeslagen wijziging.
+let _roomEditSeq = 0;
+// Ruimtenamen die nog niet bij de server zijn (lopende of wachtende
+// addRoom/updateRoom): die mag de serverversie niet overschrijven.
+const _pendingRoomNames = new Set();
+function _roomNamesPending() {
+  const names = new Set(_pendingRoomNames);
+  getQueue().forEach(function(q) {
+    if (!q.data) return;
+    if (q.action === "updateRoom") { names.add(q.data.oldName); names.add(q.data.newName); }
+    else if (q.action === "addRoom") names.add(q.data.name);
+  });
+  return names;
+}
+
 async function syncRooms() {
   if (!SCRIPT_URL) return;
+  const seq = _roomEditSeq;
   try {
     const resp = await fetchWithTimeout(
       SCRIPT_URL + "?action=getRooms&token=" + encodeURIComponent(API_TOKEN) + "&t=" + Date.now(),
@@ -594,9 +633,12 @@ async function syncRooms() {
     if (!resp || !resp.ok) return;
     const rooms = await resp.json();
     if (!Array.isArray(rooms)) return;
+    if (seq !== _roomEditSeq) return; // verouderd antwoord, zie _roomEditSeq
+    const pending = _roomNamesPending();
     let listChanged = false;
     rooms.forEach(function(r) {
       if (!r.name) return;
+      if (pending.has(r.name) || (r.renamedFrom && pending.has(r.renamedFrom))) return;
       // Een hernoemde ruimte (server bewaart de oude naam in renamedFrom):
       // ruim de oude naam lokaal op en migreer kasten + actieve filter.
       const from = (r.renamedFrom || "").trim();
@@ -704,7 +746,8 @@ async function init() {
         // Volgorde van bovenste-eerst: het meest recent geopende modal sluit
         // het eerst. confirmOverlay/statusNaamOverlay/statusPopup zijn altijd
         // bovenop andere modals te openen, dus die eerst.
-        if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
+        if (document.getElementById("roomPickModal").classList.contains("open")) { closeRoomPicker(); }
+        else if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
         else if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
@@ -1736,37 +1779,121 @@ async function setStatus(id, newStatus, naam, datum, opts) {
 // LIJST TAB
 // ============================================================
 function renderList() {
-  const rooms = ["all"];
-  for (let i = 0; i < data.length; i++) {
-    if (data[i].location && rooms.indexOf(data[i].location) === -1) rooms.push(data[i].location);
-  }
-  rooms.sort(function(a, b) { if (a==="all") return -1; if (b==="all") return 1; return a.localeCompare(b); });
+  // Ruimte-keuze: één knop i.p.v. een lange rij chips om horizontaal door
+  // te scrollen. De knop opent een kiesvenster met zoekveld (openRoomPicker).
+  _updateRoomPickButton();
+  showFiltered();
+}
 
-  // Tellingen vóór de loop berekenen om O(n*r) te vermijden.
+// Ruimtes in de data met hun aantal kasten, alfabetisch.
+function _roomCounts() {
   const counts = {};
   for (let i = 0; i < data.length; i++) {
     const loc = data[i].location;
     if (loc) counts[loc] = (counts[loc] || 0) + 1;
   }
-
-  const filter = document.getElementById("roomFilter");
-  filter.textContent = "";
-  rooms.forEach(function(r) {
-    const cnt = r === "all" ? data.length : (counts[r] || 0);
-    const chip = document.createElement("span");
-    chip.className = "chip" + (activeRoom === r ? " active" : "");
-    chip.textContent = r === "all" ? ("Alle (" + cnt + ")") : (r + " (" + cnt + ")");
-    chip.addEventListener("click", function() { setRoom(chip, r); });
-    filter.appendChild(chip);
-  });
-  showFiltered();
+  return Object.keys(counts).sort(function(a, b) {
+    return a.localeCompare(b, "nl", { numeric: true, sensitivity: "base" });
+  }).map(function(name) { return { name: name, count: counts[name] }; });
 }
 
-function setRoom(el, r) {
+// Filtert de ruimtelijst op een zoekterm (naam of beschrijving), spatie-
+// en accent-ongevoelig. Ruimtes waarvan de naam overeenkomt komen eerst.
+function _filterRooms(rooms, term) {
+  const q = _normText(term);
+  if (!q) return rooms;
+  const opNaam = [], opDesc = [];
+  rooms.forEach(function(r) {
+    if (_normText(r.name).indexOf(q) !== -1) opNaam.push(r);
+    else if (_normText(ROOM_INFO[r.name] || "").indexOf(q) !== -1) opDesc.push(r);
+  });
+  return opNaam.concat(opDesc);
+}
+
+function _updateRoomPickButton() {
+  const val = document.getElementById("roomPickValue");
+  const clr = document.getElementById("roomPickClear");
+  if (!val) return;
+  if (activeRoom === "all") {
+    val.textContent = "Alle ruimtes (" + data.length + ")";
+  } else {
+    const n = data.filter(function(d) { return d.location === activeRoom; }).length;
+    val.textContent = activeRoom + " (" + n + ")";
+  }
+  if (clr) clr.hidden = (activeRoom === "all");
+}
+
+function openRoomPicker() {
+  const modal = document.getElementById("roomPickModal");
+  if (!modal) return;
+  const inp = document.getElementById("roomPickSearch");
+  inp.value = "";
+  renderRoomPickList();
+  modal.classList.add("open");
+  // Geen autofocus: op de gsm zou het toetsenbord de halve lijst verbergen,
+  // terwijl men vaak gewoon wil scrollen en tikken.
+  // Gekozen ruimte in beeld brengen. Bewust geen scrollIntoView: dat scrollt
+  // ook de pagina achter het venster mee.
+  const list = document.getElementById("roomPickList");
+  if (!list) return;
+  list.scrollTop = 0;
+  const act = list.querySelector(".room-pick-item.active");
+  if (act) list.scrollTop = Math.max(0, act.offsetTop - list.offsetTop - list.clientHeight / 2 + act.offsetHeight / 2);
+}
+
+function closeRoomPicker() {
+  const modal = document.getElementById("roomPickModal");
+  if (modal) modal.classList.remove("open");
+}
+
+function renderRoomPickList() {
+  const list = document.getElementById("roomPickList");
+  if (!list) return;
+  const term = document.getElementById("roomPickSearch").value;
+  const rooms = _filterRooms(_roomCounts(), term);
+  list.textContent = "";
+  const items = (_normText(term) ? [] : [{ name: "all", count: data.length }]).concat(rooms);
+  if (items.length === 0) {
+    const e = document.createElement("div");
+    e.className = "room-pick-empty";
+    e.textContent = "Geen ruimte gevonden voor \u201c" + term.trim() + "\u201d.";
+    list.appendChild(e);
+    return;
+  }
+  items.forEach(function(r) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "room-pick-item" + (activeRoom === r.name ? " active" : "");
+    btn.setAttribute("role", "option");
+    btn.setAttribute("aria-selected", activeRoom === r.name ? "true" : "false");
+    const txt = document.createElement("span");
+    txt.className = "room-pick-text";
+    const nm = document.createElement("span");
+    nm.className = "room-pick-name";
+    nm.textContent = r.name === "all" ? "Alle ruimtes" : r.name;
+    txt.appendChild(nm);
+    const desc = r.name === "all" ? "" : (ROOM_INFO[r.name] || "").trim();
+    if (desc) {
+      const d = document.createElement("span");
+      d.className = "room-pick-desc";
+      d.textContent = desc;
+      txt.appendChild(d);
+    }
+    const cnt = document.createElement("span");
+    cnt.className = "room-pick-count";
+    cnt.textContent = r.count;
+    btn.appendChild(txt);
+    btn.appendChild(cnt);
+    btn.addEventListener("click", function() { setRoom(r.name); closeRoomPicker(); });
+    list.appendChild(btn);
+  });
+}
+
+function setRoom(r) {
   activeRoom = r;
-  document.querySelectorAll(".chip").forEach(function(c) { c.classList.remove("active"); });
-  el.classList.add("active");
+  _updateRoomPickButton();
   showFiltered();
+  window.scrollTo(0, 0);
 }
 
 function showFiltered() {
@@ -2433,6 +2560,8 @@ async function saveEditRoom() {
   }
 
   // Lokaal toepassen.
+  const oldDesc = ROOM_INFO[oldName] || "";
+  _roomEditSeq++;
   if (renamed) {
     applyRoomRename(oldName, newName);
   }
@@ -2446,26 +2575,71 @@ async function saveEditRoom() {
   closeEditRoomModal();
   renderRoomsList();
   renderList();
-  showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
 
-  // Naar de server sturen; bij netwerkfout in de offline-queue plaatsen.
-  if (SCRIPT_URL) {
-    const payload = { oldName: oldName, newName: newName, desc: desc };
-    try {
-      const res = await sheetAction(Object.assign({ action: "updateRoom" }, payload));
-      if (res && res.error) {
-        showToast("Server: " + res.error, true);
-      } else {
-        await logAction(
-          renamed ? ("Ruimte hernoemd: " + oldName + " -> " + newName) : ("Ruimte-beschrijving gewijzigd: " + newName),
-          "", newName, "Logboek"
-        );
-      }
-    } catch(e) {
+  if (!SCRIPT_URL) {
+    showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
+    return;
+  }
+
+  // Naar de server sturen. Netwerkfout → offline-queue. Weigert de server
+  // de wijziging (bv. een verouderde Code.gs-deployment), dan de lokale
+  // wijziging terugdraaien en dat duidelijk melden: anders lijkt het
+  // gelukt, tot de volgende sync de oude tekst stilletjes terugzet.
+  const payload = { oldName: oldName, newName: newName, desc: desc };
+  _pendingRoomNames.add(oldName);
+  _pendingRoomNames.add(newName);
+  try {
+    await sheetAction(Object.assign({ action: "updateRoom" }, payload));
+    showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
+    await logAction(
+      renamed ? ("Ruimte hernoemd: " + oldName + " -> " + newName) : ("Ruimte-beschrijving gewijzigd: " + newName),
+      "", newName, "Logboek"
+    );
+  } catch(e) {
+    if (isPermanentServerError(e)) {
+      revertRoomEdit(oldName, newName, oldDesc);
+      showToast("Niet opgeslagen — de server weigerde de wijziging: " + e.message +
+        (/onbekende actie/i.test(e.message) ? " (Code.gs opnieuw deployen in Apps Script.)" : ""), true);
+    } else {
       console.warn("Ruimte-update sync mislukt, in queue gezet:", e);
       enqueue("updateRoom", payload);
+      showToast("Geen verbinding — wijziging wordt later doorgestuurd.");
     }
+  } finally {
+    _pendingRoomNames.delete(oldName);
+    _pendingRoomNames.delete(newName);
   }
+}
+
+// Draai een lokaal toegepaste ruimte-wijziging terug (de server weigerde ze).
+function revertRoomEdit(oldName, newName, oldDesc) {
+  _roomEditSeq++;
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    if (newName !== oldName) delete stored[newName];
+    stored[oldName] = oldDesc;
+    localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+  } catch(e) { console.warn("Ruimte terugzetten in localStorage mislukt:", e); }
+  if (newName !== oldName) {
+    delete ROOM_INFO[newName];
+    try {
+      const renames = JSON.parse(localStorage.getItem("ekast-room-renames") || "{}");
+      if (renames[oldName] === newName) {
+        delete renames[oldName];
+        localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
+      }
+    } catch(e) { console.warn("Hernoeming terugdraaien mislukt:", e); }
+    let dataChanged = false;
+    data.forEach(function(item) {
+      if (item.location === newName) { item.location = oldName; dataChanged = true; }
+    });
+    if (dataChanged) saveLocal();
+    if (activeRoom === newName) activeRoom = oldName;
+  }
+  ROOM_INFO[oldName] = oldDesc;
+  const rm = document.getElementById("roomsModal");
+  if (rm && rm.classList.contains("open")) renderRoomsList();
+  renderList();
 }
 
 // ============================================================
@@ -4391,6 +4565,19 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   on("btnRoomAdd", "click", openAddRoomModal);
   on("btnRoomDrop1", "click", function() { toggleRoomDropdown("newLocation", "roomDrop1"); });
   on("btnAdd", "click", addEntry);
+
+  on("roomPickBtn", "click", openRoomPicker);
+  on("roomPickClear", "click", function() { setRoom("all"); });
+  on("roomPickCloseBtn", "click", closeRoomPicker);
+  on("roomPickSearch", "input", renderRoomPickList);
+  on("roomPickSearch", "keydown", function(e) {
+    // Enter = eerste treffer kiezen.
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const first = document.querySelector("#roomPickList .room-pick-item");
+    if (first) first.click();
+  });
+  closeOnOutsideClick("roomPickModal", ".modal", closeRoomPicker);
 
   closeOnOutsideClick("werkbonModal", ".modal", closeAfwerkenModal);
   on("wbCancelBtn", "click", closeAfwerkenModal);
