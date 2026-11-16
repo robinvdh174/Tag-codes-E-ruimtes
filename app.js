@@ -2391,7 +2391,7 @@ function showToast(msg, err) {
   t.textContent = msg;
   t.className = "toast show" + (err ? " error" : "");
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(function() { t.classList.remove("show"); }, 2500);
+  showToast._timer = setTimeout(function() { t.classList.remove("show"); }, err ? 6000 : 2500);
 }
 
 // ============================================================
@@ -2694,8 +2694,7 @@ function renderRoomsList() {
   const summary = document.getElementById("roomsSummary");
   if (summary) {
     summary.textContent = _aantal(names.length, "ruimte", "ruimtes") + " \u00b7 " +
-      _aantal(data.length, "kast", "kasten") + " \u00b7 " +
-      _aantal(VERDELERS.length, "verdeler", "verdelers");
+      _aantal(data.length, "kast", "kasten");
   }
   container.innerHTML = "";
   if (names.length === 0) {
@@ -2720,8 +2719,7 @@ function renderRoomsList() {
 
     const cnt = document.createElement("div");
     cnt.className = "device-id room-usage";
-    cnt.textContent = _aantal(use.kasten[name] || 0, "kast", "kasten") + " \u00b7 " +
-      _aantal(use.verdelers[name] || 0, "verdeler", "verdelers");
+    cnt.textContent = _aantal(use.kasten[name] || 0, "kast", "kasten");
 
     info.appendChild(nm);
     info.appendChild(meta);
@@ -2914,8 +2912,9 @@ async function deleteRoom(name) {
   } catch(e) {
     if (isPermanentServerError(e)) {
       restoreDeletedRoom(name, desc);
-      showToast("Niet verwijderd — de server weigerde: " + e.message +
-        (/onbekende actie/i.test(e.message) ? " (Code.gs opnieuw deployen in Apps Script.)" : ""), true);
+      showToast(/onbekende actie/i.test(e.message)
+        ? "Niet verwijderd. Verwijderen werkt pas nadat Code.gs opnieuw is gedeployed in Apps Script."
+        : "Niet verwijderd — de server weigerde: " + e.message, true);
     } else {
       console.warn("Ruimte verwijderen sync mislukt, in queue gezet:", e);
       enqueue("deleteRoom", { name: name, desc: desc });
