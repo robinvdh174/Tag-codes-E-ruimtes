@@ -110,7 +110,7 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .room-pick-count{flex-shrink:0;min-width:2.4rem;text-align:center;font-size:.8rem;font-weight:700;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:.2rem .5rem;}
 .room-pick-empty{padding:1.2rem .8rem;color:var(--muted);font-size:.9rem;}
 .section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.12em;margin-bottom:.8rem;}
-.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(100px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:30px;transition:transform .3s;z-index:999;white-space:nowrap;}
+.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(220px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:22px;transition:transform .3s;z-index:999;width:max-content;max-width:calc(100vw - 2rem);text-align:center;line-height:1.35;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .toast.error{background:var(--danger);color:#fff;}
 .input-with-btn{display:flex;position:relative;}
