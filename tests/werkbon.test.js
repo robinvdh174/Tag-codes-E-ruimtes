@@ -196,6 +196,18 @@ function resetWerkbon() {
   eq(_werkbon.done["1"], undefined, "done-state ook opgeruimd");
 }
 
+// ---------- 6b. markering "In bedrijf" (lege string) ook wissen ----------
+{
+  setData([{ id: "1", code: "A", location: "L1", status: "ok" }]);
+  resetWerkbon();
+  werkbonAddItemByCode("A");
+  _werkbon.done["1"] = "";
+  werkbonRemoveItem("1");
+  ok(!("1" in _werkbon.done), "Markering 'In bedrijf' gewist bij verwijderen");
+  werkbonAddItemByCode("A");
+  ok(!("1" in _werkbon.done), "Opnieuw toegevoegd label is niet vooraf gemarkeerd");
+}
+
 // ---------- 7. _wbResolveItems filtert weg-gesyncte ----------
 {
   setData([{ id: "1", code: "A", location: "L1" }]);

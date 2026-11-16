@@ -5,6 +5,11 @@ const CACHE_NAME = "ekast-" + APP_VERSION;
 // zodat de eerstvolgende scan alles opnieuw moest downloaden (en zonder
 // bereik mislukte). Naam enkel ophogen als vendor/tesseract/ zelf wijzigt.
 const VENDOR_CACHE = "ekast-vendor-tesseract-1";
+// Zo lang wachten we op het netwerk voor we de offline kopie tonen.
+const NET_TIMEOUT_MS = 3000;
+// Na een time-out zo lang direct uit de cache serveren.
+const SLOW_NET_MS = 60000;
+let _slowUntil = 0;
 const ASSETS = [
   "./index.html",
   "./style.css",
@@ -98,23 +103,53 @@ self.addEventListener("fetch", function(e) {
     return;
   }
 
-  // Same-origin: network-first met cache-fallback.
-  e.respondWith(
-    fetch(e.request, fetchOpts).then(function(response) {
-      if (response && response.ok) {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(function(cache) {
-          cache.put(e.request, clone);
-        });
-      }
-      return response;
-    }).catch(function() {
-      return caches.match(e.request).then(function(cached) {
-        if (cached) return cached;
-        if (e.request.mode === "navigate") {
-          return caches.match("./index.html");
-        }
+  // Same-origin: network-first met cache-fallback. Het netwerk krijgt
+  // NET_TIMEOUT_MS de tijd: bij zwak signaal ("wel streepjes, geen data")
+  // bleef het opstarten anders hangen tot de browser het zelf opgaf, terwijl
+  // de offline versie klaarstond. Het netwerk-antwoord dat later toch
+  // binnenkomt ververst nog steeds de cache voor de volgende start.
+  if (e.request.method !== "GET") return;
+  const fromCache = function() {
+    return caches.match(e.request).then(function(cached) {
+      if (cached) return cached;
+      if (e.request.mode === "navigate") return caches.match("./index.html");
+    });
+  };
+  const net = fetch(e.request, fetchOpts).then(function(response) {
+    if (response && response.ok) {
+      const clone = response.clone();
+      return caches.open(CACHE_NAME).then(function(cache) {
+        return cache.put(e.request, clone);
+      }).catch(function(err) {
+        console.warn("Cache bijwerken mislukt:", err);
+      }).then(function() { return response; });
+    }
+    return response;
+  });
+  // Houd de SW in leven tot de cache is bijgewerkt, ook na een time-out.
+  e.waitUntil(net.catch(function() {}));
+  e.respondWith(new Promise(function(resolve, reject) {
+    let settled = false;
+    // Liep een vorig verzoek al in de time-out, dan is het netwerk traag:
+    // de volgende bestanden meteen uit de cache i.p.v. per bestand opnieuw
+    // te wachten (index.html, style.css, app.js … = elk 3 s).
+    const timer = setTimeout(function() {
+      _slowUntil = Date.now() + SLOW_NET_MS;
+      fromCache().then(function(cached) {
+        if (cached && !settled) { settled = true; resolve(cached); }
       });
-    })
-  );
+    }, Date.now() < _slowUntil ? 0 : NET_TIMEOUT_MS);
+    net.then(function(response) {
+      clearTimeout(timer);
+      if (!settled) { settled = true; _slowUntil = 0; resolve(response); }
+    }, function(err) {
+      clearTimeout(timer);
+      if (settled) return;
+      fromCache().then(function(cached) {
+        if (settled) return;
+        settled = true;
+        if (cached) resolve(cached); else reject(err);
+      });
+    });
+  }));
 });

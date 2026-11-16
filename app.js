@@ -961,7 +961,9 @@ async function init() {
     // Sync zodra de tab weer zichtbaar wordt (bv. terug uit achtergrond op
     // mobiel) — geeft snel verse data zonder op het 30s-interval te wachten.
     document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === "visible" && SCRIPT_URL) {
+      if (document.visibilityState !== "visible") return;
+      if (_lockIfExpired()) return;
+      if (SCRIPT_URL) {
         processQueue().then(function() { syncFromSheets(true); });
       }
     });
@@ -999,6 +1001,7 @@ async function init() {
   let syncTick = 0;
   syncTimer = setInterval(function() {
     if (document.visibilityState !== "visible") return;
+    if (_lockIfExpired()) return;
     processQueue().then(function() { syncFromSheets(true); });
     // Ruimtes (hernoemd/verwijderd op een ander toestel) om de 2 minuten.
     if (++syncTick % 4 === 0) syncRooms();
@@ -1805,6 +1808,16 @@ function toggleEdit(id) {
 // STATUS (veiligstellen)
 // ============================================================
 let _statusKeuzeId = null;
+// "106F03.P1 · 3KV" — toont in de statusvensters over welke kast het gaat.
+function _kastLabel(id) {
+  const item = data.find(function(d) { return d.id === id; });
+  if (!item) return "";
+  return [item.code, item.location].filter(function(x) { return x; }).join(" \u00b7 ");
+}
+function _setKastLine(elId, id) {
+  const el = document.getElementById(elId);
+  if (el) el.textContent = _kastLabel(id);
+}
 let _statusNaamId = null;
 let _statusNaamNieuw = null;
 function openStatusKeuze(id) {
@@ -1812,6 +1825,7 @@ function openStatusKeuze(id) {
   const item = data.find(function(d) { return d.id === id; });
   if (!item) return;
   let cur = item.status || "";
+  _setKastLine("statusPopupKast", id);
 
   // Bouw de 2 knoppen dynamisch — toon altijd de 2 opties die NIET de huidige zijn
   // Als een optie de huidige is, toon hem grijs (uitgeschakeld gevoel) zodat de gebruiker weet wat actief is
@@ -1866,6 +1880,7 @@ function _openNaamModal(id, newStatus) {
   } else {
     titelEl.textContent = "Loskoppelen registreren";
   }
+  _setKastLine("statusNaamKast", id);
   const naamInp = document.getElementById("statusNaamInput");
   const datumInp = document.getElementById("statusDatumInput");
   naamInp.value = "";
@@ -3058,6 +3073,21 @@ function checkPin() {
   }
 }
 
+// De time-out werd enkel bij het opstarten gecontroleerd. Een app die open
+// blijft staan of uit de achtergrond terugkomt (op een gsm het normale
+// geval) vroeg daardoor nooit opnieuw de PIN. Geeft true als de app nu
+// vergrendeld is.
+function _lockIfExpired() {
+  const ov = document.getElementById("pinOverlay");
+  if (!ov) return false;
+  if (ov.classList.contains("open")) return true;
+  if (!safeGet("ekast-device", null)) return false;
+  const lastUnlock = parseInt(safeGet("ekast-unlock", "0"), 10) || 0;
+  if (Date.now() - lastUnlock < SESSION_TIMEOUT_MS) return false;
+  showPinEnter();
+  return true;
+}
+
 function showPinSetup() {
   const ov = document.getElementById("pinOverlay");
   ov.innerHTML =
@@ -3203,6 +3233,10 @@ function unlockApp() {
     let _lastActivityWrite = Date.now();
     ["click", "touchstart", "keydown"].forEach(function(evt) {
       document.addEventListener(evt, function() {
+        // Tikken op het PIN-scherm telt niet als activiteit: anders zou een
+        // foute PIN-poging de time-out verlengen en volstond herladen.
+        const pinOv = document.getElementById("pinOverlay");
+        if (pinOv && pinOv.classList.contains("open")) return;
         const now = Date.now();
         if (now - _lastActivityWrite < ACTIVITY_THROTTLE_MS) return;
         _lastActivityWrite = now;
@@ -4364,6 +4398,10 @@ function _wbLoad() {
         if (!_werkbon.done || typeof _werkbon.done !== "object" || Array.isArray(_werkbon.done)) {
           _werkbon.done = {};
         }
+        // Markeringen van labels die niet meer in de stapel zitten opruimen.
+        Object.keys(_werkbon.done).forEach(function(k) {
+          if (_werkbon.ids.indexOf(k) === -1) delete _werkbon.done[k];
+        });
       }
     }
   } catch (e) { console.warn("Werkbon laden mislukt:", e); }
@@ -4551,7 +4589,10 @@ function werkbonAddItemByCode(code) {
 function werkbonRemoveItem(id) {
   const idx = _werkbon.ids.indexOf(id);
   if (idx !== -1) _werkbon.ids.splice(idx, 1);
-  if (_werkbon.done && _werkbon.done[id]) delete _werkbon.done[id];
+  // "in": een markering "In bedrijf" is de lege string (falsy) en bleef
+  // anders staan, zodat een later opnieuw toegevoegd label meteen weer
+  // gemarkeerd was.
+  if (_werkbon.done && (id in _werkbon.done)) delete _werkbon.done[id];
   _wbSave();
   renderLabelsTab();
   _updateLabelBtn(id);
@@ -4698,6 +4739,7 @@ function _wbItemRow(item) {
 }
 
 function openWbStatusKeuze(id) {
+  _setKastLine("statusPopupKast", id);
   const btns = document.getElementById("statusPopupBtns");
   btns.innerHTML = "";
   [
@@ -4711,6 +4753,17 @@ function openWbStatusKeuze(id) {
     (function(a) {
       btn.addEventListener("click", function() {
         document.getElementById("statusPopup").classList.remove("open");
+        const item = data.find(function(d) { return d.id === id; });
+        // Zelfde waarschuwing als bij een losse statuswijziging: een kast
+        // die veiliggesteld/losgekoppeld is gaat terug onder spanning.
+        if (a === "" && item && item.status) {
+          showConfirm(
+            "LET OP: Je markeert \u201c" + (item.code || item.location || "deze kast") +
+              "\u201d om terug naar In bedrijf te gaan. Dit betekent dat de kast weer onder spanning kan staan. Weet je dit zeker?",
+            function() { wbSetItemStatus(id, a); }
+          );
+          return;
+        }
         wbSetItemStatus(id, a);
       });
     })(opt.action);
@@ -4903,6 +4956,7 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   on("confirmNeeBtn", "click", confirmNee);
 
   closeOnOutsideClick("statusPopup", ".status-popup-card", closeStatusKeuze);
+  on("statusPopupCancelBtn", "click", closeStatusKeuze);
   on("statusNaamCancelBtn", "click", sluitStatusNaamModal);
   on("statusNaamOkBtn", "click", bevestigStatusNaam);
 
