@@ -8,8 +8,19 @@ const path = require("path");
 const { eq, ok, summary } = require("./_helpers");
 
 // ---- Nagebootste Apps Script-diensten ----
+// Bootst na wat Sheets doet met "ingetypte" tekst in een cel die NIET als
+// platte tekst is opgemaakt: formules, getallen en datums.
+function sheetsCoerce(v) {
+  if (typeof v !== "string") return v;
+  if (/^=/.test(v)) return "#FORMULE";
+  if (/^[+-]?\d+$/.test(v)) return Number(v);
+  const dm = v.match(/^(\d{1,2})[\/-](\d{1,2})$/);
+  if (dm) return new Date(2026, Number(dm[2]) - 1, Number(dm[1]));
+  return v;
+}
 function makeSheet(name) {
   const rows = [];
+  const textCells = {};
   function range(r, c, nr, nc) {
     nr = nr || 1; nc = nc || 1;
     const api = {
@@ -26,8 +37,15 @@ function makeSheet(name) {
       setValues: function(vals) {
         for (let i = 0; i < nr; i++) {
           while (rows.length < r + i) rows.push([]);
-          for (let j = 0; j < nc; j++) rows[r - 1 + i][c - 1 + j] = vals[i][j];
+          for (let j = 0; j < nc; j++) {
+            const isText = textCells[(r + i) + ":" + (c + j)];
+            rows[r - 1 + i][c - 1 + j] = isText ? vals[i][j] : sheetsCoerce(vals[i][j]);
+          }
         }
+        return api;
+      },
+      setNumberFormat: function(f) {
+        for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) textCells[(r + i) + ":" + (c + j)] = f === "@";
         return api;
       },
       setValue: function(v) { return api.setValues([[v]]); },
@@ -39,7 +57,7 @@ function makeSheet(name) {
   }
   return {
     name: name, rows: rows,
-    appendRow: function(r) { rows.push(r.slice()); },
+    appendRow: function(r) { rows.push(r.map(sheetsCoerce)); },
     getLastRow: function() { return rows.length; },
     getLastColumn: function() { return rows.reduce(function(m, r) { return Math.max(m, r.length); }, 0); },
     getDataRange: function() { return range(1, 1, Math.max(rows.length, 1), Math.max(this.getLastColumn(), 1)); },
@@ -188,7 +206,7 @@ ok(post({ action: "updateRoom", oldName: "", newName: "X" }).error, "lege oude n
   post({ action: "addRoom", name: "Tijdelijk", desc: "" });
   ok(post({ action: "updateRoom", oldName: "Tijdelijk", newName: "Ingebouwd", desc: "" }).ok, "naam van verwijderde ruimte hergebruikt");
   eq(get({ action: "getRooms" }).filter(function(x) { return x.name === "Ingebouwd"; }).length, 1, "geen dubbele rij");
-  eq(get({ action: "version" }).version, "v5", "backend-versie v5");
+  eq(get({ action: "version" }).version, "v6", "backend-versie v6");
   delete sheets["Verdelers"];
 })();
 
@@ -216,12 +234,34 @@ eq(get({ action: "getBlocklist" }), [], "blocklist weer leeg");
 
 // ---- Verdelers ----
 eq(get({ action: "getVerdelers" }), [], "tabblad Verdelers wordt aangemaakt, lege lijst");
-sheets.Verdelers.appendRow(["MCC 99Z9", "Kelder", "T-001", 3, "1", "=99A01", "Testpomp", "S-1"]);
+// Rechtstreeks in de rijen: deze cel staat in de sheet als tekst.
+sheets.Verdelers.rows.push(["MCC 99Z9", "Kelder", "T-001", 3, "1", "=99A01", "Testpomp", "S-1"]);
 sheets.Verdelers.appendRow(["", "", "", "", "", "", "", ""]);
 eq(get({ action: "getVerdelers" }), [{ verdeler: "MCC 99Z9", ruimte: "Kelder", tekening: "T-001", veld: "3", nr: "1", tag: "=99A01", omschrijving: "Testpomp", schema: "S-1" }], "verdeler-rij opgehaald, lege rij overgeslagen");
 
 // ---- Datums uit de sheet ----
 eq(cellToString(new Date(2026, 0, 5)), "2026-01-05", "datum zonder tijd → JJJJ-MM-DD");
 ok(/T/.test(cellToString(new Date(2026, 0, 5, 13, 30))), "datum met tijd → volledige ISO");
+
+// ---- Platte tekst: Sheets mag ingevoerde waarden niet omzetten ----
+{
+  post({ action: "add", data: JSON.stringify({ id: "txt-1", code: "0123", location: "Hal A", position: "7/5", note: "=IMPORTXML(\"x\")", status: "" }) });
+  let it = get({ action: "get" }).filter(function(x) { return x.id === "txt-1"; })[0];
+  eq(it.code, "0123", "voorloopnul in code blijft behouden");
+  eq(it.position, "7/5", "positie '7/5' wordt geen datum");
+  eq(it.note, "IMPORTXML(\"x\")", "formule wordt onschadelijk gemaakt (= weg)");
+  post({ action: "update", data: JSON.stringify({ id: "txt-1", code: "+12", location: "Hal A", position: "1-2", note: "", status: "ok", statusBy: "007", statusDate: "2026-11-16" }) });
+  it = get({ action: "get" }).filter(function(x) { return x.id === "txt-1"; })[0];
+  eq(it.code, "+12", "code '+12' blijft tekst na update");
+  eq(it.position, "1-2", "positie '1-2' blijft tekst na update");
+  eq(it.statusBy, "007", "naam '007' blijft tekst");
+  post({ action: "blockDevice", deviceId: "01234567", deviceName: "Test", blockedBy: "T" });
+  ok(get({ action: "getBlocklist" }).indexOf("01234567") !== -1, "toestel-ID met voorloopnul blijft blokkeerbaar");
+  post({ action: "unblockDevice", deviceId: "01234567" });
+  post({ action: "addRoom", name: "1-2", desc: "=A1" });
+  const rm = get({ action: "getRooms" }).filter(function(r) { return r.name === "1-2"; })[0];
+  ok(rm && rm.desc === "A1", "ruimtenaam '1-2' en beschrijving blijven tekst");
+  post({ action: "delete", id: "txt-1" });
+}
 
 summary();
