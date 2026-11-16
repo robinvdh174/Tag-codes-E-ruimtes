@@ -1,5 +1,5 @@
 // ============================================================
-// E-KAST ZOEKER — Google Apps Script Backend v5
+// E-KAST ZOEKER — Google Apps Script Backend v6
 // ============================================================
 
 var SPREADSHEET_ID = "1TZ18nMFeALPOjioHmFnaHFaTWqeRkupZcXbqEygzH5w";
@@ -71,7 +71,7 @@ function handleRequest_(params) {
 }
 
 function dispatch_(action, params) {
-  if (action === "version")  return { version: "v5", ok: true };
+  if (action === "version")  return { version: "v6", ok: true };
   if (action === "get")      return handleGet();
   if (action === "add")      return handleAdd(params.data);
   if (action === "update")   return handleUpdate(params.data);
@@ -201,7 +201,7 @@ function handleAdd(dataParam) {
   var row = HEADERS.map(function(h) {
     return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
   });
-  sheet.appendRow(row);
+  appendTextRow_(sheet, row);
   Logger.log("ADD: " + item.code + " toegevoegd");
   return { success: true, action: "add", id: item.id, lastModified: newLM };
 }
@@ -242,7 +242,7 @@ function handleUpdate(dataParam) {
       var newRow = HEADERS.map(function(h) {
         return h === "status" ? statusNaarSheet(item[h] || "") : (item[h] || "");
       });
-      sheet.getRange(i + 1, 1, 1, HEADERS.length).setValues([newRow]);
+      writeTextRow_(sheet, i + 1, newRow);
       Logger.log("UPDATE: rij " + (i+1) + " bijgewerkt voor " + item.code);
       return { success: true, action: "update", id: item.id, lastModified: newLM };
     }
@@ -296,7 +296,7 @@ function handleLog(params) {
     sheet.setColumnWidth(5, 140);
   }
   var timestamp = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
-  sheet.appendRow([
+  appendTextRow_(sheet, [
     timestamp,
     params.logaction || "",
     params.code      || "",
@@ -323,12 +323,12 @@ function handleAddRoom(name, desc) {
     if (String(rows[i][0]).trim() !== name) continue;
     if (isDeletedRow_(rows[i])) {
       // Eerder verwijderde ruimte opnieuw toegevoegd: rij weer actief maken.
-      sheet.getRange(i + 1, 1, 1, 4).setValues([[name, desc, "", ""]]);
+      writeTextRow_(sheet, i + 1, [name, desc, "", ""]);
       return { ok: true, restored: true };
     }
     return { ok: true, existing: true };
   }
-  sheet.appendRow([name, desc, "", ""]);
+  appendTextRow_(sheet, [name, desc, "", ""]);
   Logger.log("Ruimte toegevoegd: " + name);
   return { ok: true };
 }
@@ -385,10 +385,10 @@ function handleUpdateRoom(oldName, newName, desc) {
     var chain = splitNames_(rows[oldRow][2]);
     if (renamed) chain.push(oldName);
     chain = chain.filter(function(n, ix) { return n !== newName && chain.indexOf(n) === ix; });
-    sheet.getRange(oldRow + 1, 1, 1, 4).setValues([[newName, desc, chain.join(" | "), ""]]);
+    writeTextRow_(sheet, oldRow + 1, [newName, desc, chain.join(" | "), ""]);
   } else {
     // Ingebouwde ruimte die nog geen override-rij had.
-    sheet.appendRow([newName, desc, renamed ? oldName : "", ""]);
+    appendTextRow_(sheet, [newName, desc, renamed ? oldName : "", ""]);
   }
 
   // Hernoem alle kasten en verdelers die naar de oude ruimte verwezen.
@@ -424,7 +424,7 @@ function handleDeleteRoom(name) {
       return { ok: true };
     }
   }
-  sheet.appendRow([name, "", "", "ja"]);
+  appendTextRow_(sheet, [name, "", "", "ja"]);
   Logger.log("Ruimte verwijderd (ingebouwd): " + name);
   return { ok: true };
 }
@@ -588,6 +588,23 @@ function handleGetRooms() {
 // ----------------------------------------------------------
 // Hulpfuncties
 // ----------------------------------------------------------
+
+// Schrijft één rij als PLATTE TEKST. Zonder dit behandelt Sheets wat de app
+// stuurt alsof het ingetypt is: "7/5" of "1-2" wordt een datum, "0123" en
+// "+12" worden een getal (voorloopnul/plus weg) en tekst die met "=" begint
+// wordt een formule die in de sheet wordt uitgevoerd. De cellen krijgen
+// eerst de opmaak "platte tekst" (@); een "=" vooraan wordt bovendien
+// weggehaald, zodat er in geen geval een formule kan ontstaan.
+function textCell_(v) {
+  return String(v == null ? "" : v).replace(/^=+/, "");
+}
+function writeTextRow_(sheet, rowIndex, values) {
+  var row = values.map(textCell_);
+  sheet.getRange(rowIndex, 1, 1, row.length).setNumberFormat("@").setValues([row]);
+}
+function appendTextRow_(sheet, values) {
+  writeTextRow_(sheet, sheet.getLastRow() + 1, values);
+}
 function cellToString(val) {
   if (val instanceof Date) {
     // Datum mét tijd (bijv. lastModified opgeslagen als ISO-timestamp en later
@@ -665,7 +682,7 @@ function handleBlockDevice(deviceId, deviceName, blockedBy) {
     if (String(rows[i][0]) === String(deviceId)) return { ok: true, existing: true };
   }
   var date = Utilities.formatDate(new Date(), "Europe/Brussels", "dd-MM-yyyy HH:mm:ss");
-  sheet.appendRow([deviceId, deviceName || "", blockedBy || "", date]);
+  appendTextRow_(sheet, [deviceId, deviceName || "", blockedBy || "", date]);
   Logger.log("GEBLOKKEERD: " + deviceId + " (" + deviceName + ") door " + blockedBy);
   return { ok: true };
 }
