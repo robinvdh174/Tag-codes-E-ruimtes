@@ -234,6 +234,9 @@ input[type=date]:focus{border-color:var(--accent);}
 .device-name{font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .device-id{font-size:.72rem;color:var(--muted);margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .device-btn{padding:.32rem .65rem;border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer;border:1.5px solid;white-space:nowrap;background:transparent;}
+.room-usage{color:var(--text);opacity:.8;}
+.rooms-summary{font-size:.78rem;font-weight:700;color:var(--accent);margin-bottom:.4rem;}
+.btn-room-delete{display:block;width:100%;margin-top:.9rem;padding:.7rem;background:transparent;color:var(--danger-text);border:1.5px solid var(--danger);border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer;}
 .device-btn-block{color:var(--danger-text);border-color:var(--danger);}
 .device-btn-unblock{color:var(--success);border-color:var(--success);}
 .device-btn:disabled{opacity:.4;cursor:not-allowed;color:var(--muted);border-color:var(--muted);}

@@ -51,6 +51,7 @@ var fetch = async function(url, opts) {
 };
 function postedAction(call) { return JSON.parse(call.opts.body).action; }
 
+eval(sliceBlock("// Oude ruimtenaam -> huidige naam", "// ============================================================\n// DATA & STATE"));
 eval(sliceBlock("const QUEUE_KEY", "// Handmatige sync"));
 
 // De herhaal-sync niet echt inplannen in de test.

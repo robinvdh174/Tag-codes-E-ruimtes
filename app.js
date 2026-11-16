@@ -83,6 +83,44 @@ let VERDELERS = [];
   } catch(e) { console.warn("Ruimte-hernoemingen laden mislukt:", e); }
 })();
 
+// Lokaal bekende verwijderde ruimtes (via het beheer of van de server):
+// ook een ingebouwde ruimte blijft zo weg na een reload.
+(function applyStoredRoomDeletes() {
+  try {
+    const gone = JSON.parse(localStorage.getItem("ekast-room-deleted") || "[]");
+    if (Array.isArray(gone)) gone.forEach(function(name) { delete ROOM_INFO[name]; });
+  } catch(e) { console.warn("Verwijderde ruimtes laden mislukt:", e); }
+})();
+
+// Oude ruimtenaam -> huidige naam, volgens de lokaal onthouden
+// hernoemingen. Volgt ketens (A -> B en later B -> C), met een grens
+// tegen lussen.
+function _roomRenameMap() {
+  try { return JSON.parse(localStorage.getItem("ekast-room-renames") || "{}") || {}; }
+  catch(e) { return {}; }
+}
+function _currentRoomName(loc, renames) {
+  let hops = 0;
+  while (renames[loc] && renames[loc] !== loc && hops++ < 10) loc = renames[loc];
+  return loc;
+}
+// Zet kasten die nog een oude ruimtenaam dragen op de huidige naam.
+// Nodig na elke sync: staat een kast in de sheet nog met de oude naam
+// (bv. gemist bij het hernoemen), dan toonde de app de oude ruimte
+// terwijl het beheer de nieuwe naam liet zien. Geeft true bij wijziging.
+function _applyRoomRenamesTo(items) {
+  const renames = _roomRenameMap();
+  if (Object.keys(renames).length === 0) return false;
+  let changed = false;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it || !it.location || !renames[it.location]) continue;
+    const loc = _currentRoomName(it.location, renames);
+    if (loc !== it.location) { it.location = loc; changed = true; }
+  }
+  return changed;
+}
+
 // ============================================================
 // DATA & STATE
 // ============================================================
@@ -177,9 +215,7 @@ try {
   } catch(e) { console.warn("Ruimte-hernoemingen (migratie) laden mislukt:", e); }
   let changed = false;
   data.forEach(function(item) {
-    // Ketens volgen (A -> B en later B -> C), met een grens tegen lussen.
-    let loc = item.location, hops = 0;
-    while (renames[loc] && renames[loc] !== loc && hops++ < 10) loc = renames[loc];
+    const loc = _currentRoomName(item.location, renames);
     if (loc !== item.location) { item.location = loc; changed = true; }
   });
   if (changed) {
@@ -349,6 +385,8 @@ async function processQueue() {
           await sheetAction({ action: "addRoom", name: entry.data.name, desc: entry.data.desc || "" });
         } else if (entry.action === "updateRoom") {
           await sheetAction({ action: "updateRoom", oldName: entry.data.oldName, newName: entry.data.newName, desc: entry.data.desc || "" });
+        } else if (entry.action === "deleteRoom") {
+          await sheetAction({ action: "deleteRoom", name: entry.data.name });
         }
         dequeue(entry.queueId);
         if (entry.action === "add") {
@@ -369,11 +407,12 @@ async function processQueue() {
           }
           continue;
         }
-        if ((entry.action === "updateRoom" || entry.action === "addRoom") && isPermanentServerError(e)) {
+        if ((entry.action === "updateRoom" || entry.action === "addRoom" || entry.action === "deleteRoom") && isPermanentServerError(e)) {
           // De server weigert deze ruimte-actie; opnieuw proberen helpt niet
           // en zou de rest van de queue blokkeren. Weggooien en melden.
           dequeue(entry.queueId);
           showToast("Ruimte-wijziging geweigerd door de server: " + e.message, true);
+          if (entry.action === "deleteRoom") restoreDeletedRoom(entry.data.name, entry.data.desc || "");
           syncRooms();
           continue;
         }
@@ -493,6 +532,7 @@ async function syncFromSheets(silent) {
           if (!seen[pid] && localMap[pid]) merged.push(localMap[pid]);
         });
         const next = deduplicateById(merged);
+        _applyRoomRenamesTo(next);
         // Enkel hertekenen als er echt iets veranderd is: een volledige
         // refresh elke 30 s liet de app op een gsm telkens even bevriezen
         // en klapte open kaarten (bewerken/verwijderen) weer dicht.
@@ -576,7 +616,10 @@ async function sheetAction(params) {
   if (!SCRIPT_URL) return false;
   // Blokkeer auto-sync terwijl we schrijven, anders overschrijft die onze nieuwe data
   _isWriting = true;
-  const mutates = params.action === "add" || params.action === "update" || params.action === "delete";
+  // Ook ruimte hernoemen/verwijderen: de server past daarbij de kasten aan,
+  // dus een lees-antwoord dat intussen onderweg was is verouderd.
+  const mutates = params.action === "add" || params.action === "update" || params.action === "delete" ||
+    params.action === "updateRoom" || params.action === "deleteRoom";
   if (mutates) _writeSeq++;
   try {
     if (_postSupported) {
@@ -643,6 +686,7 @@ function _laadVerdelerCache() {
   try {
     const rows = JSON.parse(localStorage.getItem(VERDELERS_KEY) || "[]");
     VERDELERS = _bouwVerdelers(rows);
+    _hernoemVerdelerRuimtes();
   } catch(e) { VERDELERS = []; }
   _verdelerIdx = null;
 }
@@ -660,6 +704,7 @@ async function syncVerdelers() {
     if (nieuw === (localStorage.getItem(VERDELERS_KEY) || "[]")) return;
     try { localStorage.setItem(VERDELERS_KEY, nieuw); } catch(e) { console.warn("Verdelers opslaan mislukt:", e); }
     VERDELERS = _bouwVerdelers(rows);
+    _hernoemVerdelerRuimtes();
     _verdelerIdx = null;
     refreshUI();
   } catch(e) {
@@ -680,7 +725,7 @@ function _roomNamesPending() {
   getQueue().forEach(function(q) {
     if (!q.data) return;
     if (q.action === "updateRoom") { names.add(q.data.oldName); names.add(q.data.newName); }
-    else if (q.action === "addRoom") names.add(q.data.name);
+    else if (q.action === "addRoom" || q.action === "deleteRoom") names.add(q.data.name);
   });
   return names;
 }
@@ -699,15 +744,28 @@ async function syncRooms() {
     if (seq !== _roomEditSeq) return; // verouderd antwoord, zie _roomEditSeq
     const pending = _roomNamesPending();
     let listChanged = false;
+    // Namen die op de server een actieve ruimte zijn. Een oude naam uit
+    // renamedFrom die intussen weer zelf een ruimte is, niet opruimen.
+    const live = new Set();
+    rooms.forEach(function(r) { if (r.name && !r.deleted) live.add(r.name); });
     rooms.forEach(function(r) {
       if (!r.name) return;
-      if (pending.has(r.name) || (r.renamedFrom && pending.has(r.renamedFrom))) return;
-      // Een hernoemde ruimte (server bewaart de oude naam in renamedFrom):
-      // ruim de oude naam lokaal op en migreer kasten + actieve filter.
-      const from = (r.renamedFrom || "").trim();
-      if (from && from !== r.name) {
-        if (applyRoomRename(from, r.name)) listChanged = true;
+      // renamedFrom kan meerdere oude namen bevatten ("A | B").
+      const froms = String(r.renamedFrom || "").split("|")
+        .map(function(n) { return n.trim(); })
+        .filter(function(n) { return n && n !== r.name; });
+      if (pending.has(r.name) || froms.some(function(n) { return pending.has(n); })) return;
+      if (r.deleted) {
+        if (!live.has(r.name) && removeRoomLocal(r.name)) listChanged = true;
+        return;
       }
+      // Een hernoemde ruimte: ruim de oude naam lokaal op en migreer
+      // kasten + actieve filter.
+      froms.forEach(function(from) {
+        if (live.has(from)) return;
+        if (applyRoomRename(from, r.name)) listChanged = true;
+      });
+      if (_unmarkRoomDeleted(r.name)) listChanged = true;
       // Beschrijving overnemen van de server (bron van waarheid bij edits),
       // ook voor ingebouwde ruimtes waarvan de omschrijving is aangepast.
       if (ROOM_INFO[r.name] !== (r.desc || "")) {
@@ -720,14 +778,81 @@ async function syncRooms() {
         localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
       } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
     });
-    // Staat het beheer-overzicht open, dan meteen verversen.
+    // Een actieve ruimte mag niet (meer) als "oude naam" onthouden blijven.
+    try {
+      const renames = _roomRenameMap();
+      let dirty = false;
+      live.forEach(function(n) { if (renames.hasOwnProperty(n)) { delete renames[n]; dirty = true; } });
+      if (dirty) localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
+    } catch(e) { console.warn("Hernoemingen opschonen mislukt:", e); }
     if (listChanged) {
+      _hernoemVerdelerRuimtes();
+      refreshUI();
+      // Staat het beheer-overzicht open, dan meteen verversen.
       const rm = document.getElementById("roomsModal");
       if (rm && rm.classList.contains("open")) renderRoomsList();
     }
   } catch(e) {
     console.warn("syncRooms mislukt:", e);
   }
+}
+
+// Verwijder een ruimte lokaal en onthoud dat (ook voor ingebouwde ruimtes).
+// Geeft true terug als er lokaal iets veranderde.
+function removeRoomLocal(name) {
+  if (!name) return false;
+  let changed = false;
+  if (ROOM_INFO.hasOwnProperty(name)) { delete ROOM_INFO[name]; changed = true; }
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    if (stored.hasOwnProperty(name)) {
+      delete stored[name];
+      localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+    }
+    const gone = JSON.parse(localStorage.getItem("ekast-room-deleted") || "[]");
+    if (gone.indexOf(name) === -1) {
+      gone.push(name);
+      localStorage.setItem("ekast-room-deleted", JSON.stringify(gone));
+    }
+  } catch(e) { console.warn("Ruimte lokaal verwijderen mislukt:", e); }
+  if (activeRoom === name) { activeRoom = "all"; changed = true; }
+  return changed;
+}
+
+// De ruimte bestaat (weer): haal ze van de lijst met verwijderde ruimtes.
+function _unmarkRoomDeleted(name) {
+  try {
+    const gone = JSON.parse(localStorage.getItem("ekast-room-deleted") || "[]");
+    const ix = gone.indexOf(name);
+    if (ix === -1) return false;
+    gone.splice(ix, 1);
+    localStorage.setItem("ekast-room-deleted", JSON.stringify(gone));
+    return true;
+  } catch(e) { return false; }
+}
+
+// Een lokaal verwijderde ruimte terugzetten (de server weigerde).
+function restoreDeletedRoom(name, desc) {
+  _roomEditSeq++;
+  _unmarkRoomDeleted(name);
+  ROOM_INFO[name] = desc || "";
+  try {
+    const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
+    stored[name] = desc || "";
+    localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
+  } catch(e) { console.warn("Ruimte terugzetten mislukt:", e); }
+  const rm = document.getElementById("roomsModal");
+  if (rm && rm.classList.contains("open")) renderRoomsList();
+}
+
+// Verdelers dragen hun ruimte uit het tabblad "Verdelers"; na een
+// hernoeming kan daar (of in de lokale cache) nog de oude naam staan.
+function _hernoemVerdelerRuimtes() {
+  const renames = _roomRenameMap();
+  if (Object.keys(renames).length === 0) return;
+  VERDELERS.forEach(function(v) {
+    if (v.ruimte && renames[v.ruimte]) v.ruimte = _currentRoomName(v.ruimte, renames);
+  });
 }
 
 // Verwerk een hernoeming lokaal: verwijder de oude naam uit ROOM_INFO en
@@ -740,6 +865,7 @@ function applyRoomRename(oldName, newName) {
   let changed = false;
 
   if (ROOM_INFO.hasOwnProperty(oldName)) { delete ROOM_INFO[oldName]; changed = true; }
+  _unmarkRoomDeleted(newName);
 
   // localStorage-cache van ruimtes bijwerken.
   try {
@@ -870,9 +996,12 @@ async function init() {
   // (her)openen van de app of het "online"-event, zodat een wijziging die
   // door een time-out in de wachtrij belandde bleef staan zolang de app
   // gewoon open stond.
+  let syncTick = 0;
   syncTimer = setInterval(function() {
     if (document.visibilityState !== "visible") return;
     processQueue().then(function() { syncFromSheets(true); });
+    // Ruimtes (hernoemd/verwijderd op een ander toestel) om de 2 minuten.
+    if (++syncTick % 4 === 0) syncRooms();
   }, SYNC_INTERVAL_MS);
   _initAdminTrigger();
 }
@@ -2314,8 +2443,15 @@ async function saveNewRoom() {
   const desc = document.getElementById("newRoomDesc").value.trim();
 
   // Lokaal opslaan
+  _roomEditSeq++;
   ROOM_INFO[name] = desc;
+  _unmarkRoomDeleted(name);
   try {
+    const renames = _roomRenameMap();
+    if (renames.hasOwnProperty(name)) {
+      delete renames[name];
+      localStorage.setItem("ekast-room-renames", JSON.stringify(renames));
+    }
     const stored = JSON.parse(localStorage.getItem("ekast-custom-rooms") || "{}");
     stored[name] = desc;
     localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
@@ -2534,12 +2670,33 @@ function closeRoomsModal() {
   if (modal) modal.classList.remove("open");
 }
 
+// Aantal kasten en verdelers per ruimte.
+function _roomUsage() {
+  const kasten = {}, verdelers = {};
+  for (let i = 0; i < data.length; i++) {
+    const loc = data[i].location;
+    if (loc) kasten[loc] = (kasten[loc] || 0) + 1;
+  }
+  VERDELERS.forEach(function(v) {
+    if (v.ruimte) verdelers[v.ruimte] = (verdelers[v.ruimte] || 0) + 1;
+  });
+  return { kasten: kasten, verdelers: verdelers };
+}
+function _aantal(n, enkel, meer) { return n + " " + (n === 1 ? enkel : meer); }
+
 function renderRoomsList() {
   const container = document.getElementById("roomsList");
   if (!container) return;
   const names = Object.keys(ROOM_INFO).sort(function(a, b) {
     return a.toLowerCase().localeCompare(b.toLowerCase(), "nl");
   });
+  const use = _roomUsage();
+  const summary = document.getElementById("roomsSummary");
+  if (summary) {
+    summary.textContent = _aantal(names.length, "ruimte", "ruimtes") + " \u00b7 " +
+      _aantal(data.length, "kast", "kasten") + " \u00b7 " +
+      _aantal(VERDELERS.length, "verdeler", "verdelers");
+  }
   container.innerHTML = "";
   if (names.length === 0) {
     container.innerHTML = "<div style='color:var(--muted);text-align:center;padding:2rem;'>Nog geen ruimtes.</div>";
@@ -2561,8 +2718,14 @@ function renderRoomsList() {
     const desc = (ROOM_INFO[name] || "").trim();
     meta.textContent = desc || "(geen beschrijving)";
 
+    const cnt = document.createElement("div");
+    cnt.className = "device-id room-usage";
+    cnt.textContent = _aantal(use.kasten[name] || 0, "kast", "kasten") + " \u00b7 " +
+      _aantal(use.verdelers[name] || 0, "verdeler", "verdelers");
+
     info.appendChild(nm);
     info.appendChild(meta);
+    info.appendChild(cnt);
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -2641,9 +2804,10 @@ async function saveEditRoom() {
     localStorage.setItem("ekast-custom-rooms", JSON.stringify(stored));
   } catch(e) { console.warn("Ruimte opslaan in localStorage mislukt:", e); }
 
+  _hernoemVerdelerRuimtes();
   closeEditRoomModal();
   renderRoomsList();
-  renderList();
+  refreshUI();
 
   if (!SCRIPT_URL) {
     showToast(renamed ? "Ruimte hernoemd naar \"" + newName + "\"." : "Beschrijving bijgewerkt.");
@@ -2709,6 +2873,57 @@ function revertRoomEdit(oldName, newName, oldDesc) {
   const rm = document.getElementById("roomsModal");
   if (rm && rm.classList.contains("open")) renderRoomsList();
   renderList();
+}
+
+// Ruimte verwijderen vanuit het bewerk-venster (beheerder). Kan alleen
+// als er geen kasten meer in de ruimte staan.
+function askDeleteRoom() {
+  const name = _editRoomOriginalName;
+  if (!name) return;
+  const err = document.getElementById("editRoomErr");
+  const use = _roomUsage();
+  const nK = use.kasten[name] || 0;
+  const nV = use.verdelers[name] || 0;
+  if (nK > 0) {
+    if (err) err.textContent = "Er " + (nK === 1 ? "staat nog 1 kast" : "staan nog " + nK + " kasten") +
+      " in deze ruimte. Verplaats of verwijder die eerst.";
+    return;
+  }
+  showConfirm(
+    "Ruimte \"" + name + "\" verwijderen?" +
+      (nV > 0 ? " Let op: " + _aantal(nV, "verdeler verwijst", "verdelers verwijzen") + " nog naar deze ruimte." : ""),
+    function() { deleteRoom(name); }
+  );
+}
+
+async function deleteRoom(name) {
+  const desc = ROOM_INFO[name] || "";
+  _roomEditSeq++;
+  removeRoomLocal(name);
+  closeEditRoomModal();
+  renderRoomsList();
+  refreshUI();
+
+  if (!SCRIPT_URL) { showToast("Ruimte \"" + name + "\" verwijderd."); return; }
+
+  _pendingRoomNames.add(name);
+  try {
+    await sheetAction({ action: "deleteRoom", name: name });
+    showToast("Ruimte \"" + name + "\" verwijderd.");
+    await logAction("Ruimte verwijderd: " + name, "", name, "Logboek");
+  } catch(e) {
+    if (isPermanentServerError(e)) {
+      restoreDeletedRoom(name, desc);
+      showToast("Niet verwijderd — de server weigerde: " + e.message +
+        (/onbekende actie/i.test(e.message) ? " (Code.gs opnieuw deployen in Apps Script.)" : ""), true);
+    } else {
+      console.warn("Ruimte verwijderen sync mislukt, in queue gezet:", e);
+      enqueue("deleteRoom", { name: name, desc: desc });
+      showToast("Geen verbinding — verwijderen wordt later doorgestuurd.");
+    }
+  } finally {
+    _pendingRoomNames.delete(name);
+  }
 }
 
 // ============================================================
@@ -4678,6 +4893,7 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   closeOnOutsideClick("editRoomModal", ".modal", closeEditRoomModal);
   on("editRoomCancelBtn", "click", closeEditRoomModal);
   on("editRoomSaveBtn", "click", saveEditRoom);
+  on("editRoomDeleteBtn", "click", askDeleteRoom);
 
   closeOnOutsideClick("addRoomModal", ".modal", closeAddRoomModal);
   on("addRoomCancelBtn", "click", closeAddRoomModal);

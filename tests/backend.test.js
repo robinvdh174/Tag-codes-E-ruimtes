@@ -150,6 +150,48 @@ eq(get({ action: "getRooms" })[1], { name: "Proefruimte", desc: "nieuw", renamed
 ok(/bestaat al/.test(post({ action: "updateRoom", oldName: "Proefruimte", newName: "Kelder", desc: "" }).error), "botsende naam geweigerd");
 ok(post({ action: "updateRoom", oldName: "", newName: "X" }).error, "lege oude naam geweigerd");
 
+// ---- Hernoemen: kasten met afwijkende schrijfwijze + verdelers + herhaling ----
+(function() {
+  const k = sheets["Kasten"];
+  const loc = k.rows[0].indexOf("location"), id = k.rows[0].indexOf("id");
+  function rij(i, l) { const r = k.rows[0].map(function() { return ""; }); r[id] = i; r[loc] = l; k.rows.push(r); }
+  rij("h1", "Hal A"); rij("h2", "Hal A "); rij("h3", "hal a"); rij("h4", "Hal B");
+  sheets["Verdelers"] = makeSheet("Verdelers");
+  sheets["Verdelers"].appendRow(["verdeler", "ruimte", "tekening", "veld", "nr", "tag", "omschrijving", "schema"]);
+  sheets["Verdelers"].appendRow(["MCC T", "Hal A", "", "+01", "1", "T1", "", ""]);
+  const r = post({ action: "updateRoom", oldName: "Hal A", newName: "Hal Noord", desc: "" });
+  eq(r.kastenRenamed, 3, "ook kasten met spatie/andere hoofdletters hernoemd");
+  function locs() { return get({ action: "get" }).filter(function(x) { return /^h\d$/.test(x.id); }).map(function(x) { return x.location; }); }
+  eq(locs(), ["Hal Noord", "Hal Noord", "Hal Noord", "Hal B"], "kasten staan onder de nieuwe naam");
+  eq(get({ action: "getVerdelers" })[0].ruimte, "Hal Noord", "verdeler mee hernoemd");
+  // dezelfde actie nog eens (herhaling na time-out) -> geen 'bestaat al'
+  const again = post({ action: "updateRoom", oldName: "Hal A", newName: "Hal Noord", desc: "nu met tekst" });
+  ok(again.ok && again.already, "herhaalde hernoeming is geen fout");
+  // tweede hernoeming: beide oude namen bewaard
+  post({ action: "updateRoom", oldName: "Hal Noord", newName: "Hal N", desc: "" });
+  const room = get({ action: "getRooms" }).filter(function(x) { return x.name === "Hal N"; })[0];
+  eq(room.renamedFrom, "Hal A | Hal Noord", "keten van oude namen bewaard");
+  // een kast die in de sheet nog de oude naam draagt, komt toch goed door
+  rij("h5", "Hal A");
+  eq(locs()[4], "Hal N", "oude naam in de sheet -> huidige naam bij ophalen");
+
+  // ---- Ruimte verwijderen ----
+  ok(/4 kasten/.test(post({ action: "deleteRoom", name: "Hal N" }).error), "ruimte met kasten niet verwijderbaar");
+  ok(post({ action: "deleteRoom", name: "" }).error, "lege naam geweigerd");
+  eq(post({ action: "deleteRoom", name: "Kelder" }), { ok: true }, "lege ruimte verwijderd");
+  eq(get({ action: "getRooms" }).filter(function(x) { return x.name === "Kelder"; })[0].deleted, true, "verwijdering zichtbaar voor andere toestellen");
+  eq(post({ action: "deleteRoom", name: "Ingebouwd" }), { ok: true }, "ingebouwde ruimte (geen rij) verwijderd");
+  eq(get({ action: "getRooms" }).filter(function(x) { return x.name === "Ingebouwd"; })[0].deleted, true, "markering voor ingebouwde ruimte");
+  ok(post({ action: "addRoom", name: "Kelder", desc: "terug" }).restored, "verwijderde ruimte opnieuw toegevoegd");
+  eq(get({ action: "getRooms" }).filter(function(x) { return x.name === "Kelder"; })[0], { name: "Kelder", desc: "terug", renamedFrom: "" }, "weer actief");
+  // hernoemen naar de naam van een verwijderde ruimte mag
+  post({ action: "addRoom", name: "Tijdelijk", desc: "" });
+  ok(post({ action: "updateRoom", oldName: "Tijdelijk", newName: "Ingebouwd", desc: "" }).ok, "naam van verwijderde ruimte hergebruikt");
+  eq(get({ action: "getRooms" }).filter(function(x) { return x.name === "Ingebouwd"; }).length, 1, "geen dubbele rij");
+  eq(get({ action: "version" }).version, "v5", "backend-versie v5");
+  delete sheets["Verdelers"];
+})();
+
 // ---- Logboek ----
 post({ action: "log", logaction: "Toegevoegd", code: "T-1", location: "Kelder", device: "Test (ABCD1234)", sheet: "Logboek Toevoegingen" });
 eq(sheets["Logboek Toevoegingen"].rows.length, 2, "logregel in het juiste tabblad");
