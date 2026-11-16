@@ -746,7 +746,8 @@ async function init() {
         // Volgorde van bovenste-eerst: het meest recent geopende modal sluit
         // het eerst. confirmOverlay/statusNaamOverlay/statusPopup zijn altijd
         // bovenop andere modals te openen, dus die eerst.
-        if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
+        if (document.getElementById("roomPickModal").classList.contains("open")) { closeRoomPicker(); }
+        else if (document.getElementById("adminCodeOverlay").classList.contains("open")) { closeAdminCodePrompt(); }
         else if (document.getElementById("confirmOverlay").classList.contains("open")) { confirmNee(); }
         else if (document.getElementById("statusNaamOverlay").classList.contains("open")) { sluitStatusNaamModal(); }
         else if (document.getElementById("statusPopup").classList.contains("open")) { closeStatusKeuze(); }
@@ -1778,37 +1779,121 @@ async function setStatus(id, newStatus, naam, datum, opts) {
 // LIJST TAB
 // ============================================================
 function renderList() {
-  const rooms = ["all"];
-  for (let i = 0; i < data.length; i++) {
-    if (data[i].location && rooms.indexOf(data[i].location) === -1) rooms.push(data[i].location);
+  // Ruimte-keuze: één knop i.p.v. een lange rij chips om horizontaal door
+  // te scrollen. De knop opent een kiesvenster met zoekveld (openRoomPicker).
+  if (activeRoom !== "all" && !data.some(function(d) { return d.location === activeRoom; })) {
+    activeRoom = "all";
   }
-  rooms.sort(function(a, b) { if (a==="all") return -1; if (b==="all") return 1; return a.localeCompare(b); });
+  _updateRoomPickButton();
+  showFiltered();
+}
 
-  // Tellingen vóór de loop berekenen om O(n*r) te vermijden.
+// Ruimtes in de data met hun aantal kasten, alfabetisch.
+function _roomCounts() {
   const counts = {};
   for (let i = 0; i < data.length; i++) {
     const loc = data[i].location;
     if (loc) counts[loc] = (counts[loc] || 0) + 1;
   }
-
-  const filter = document.getElementById("roomFilter");
-  filter.textContent = "";
-  rooms.forEach(function(r) {
-    const cnt = r === "all" ? data.length : (counts[r] || 0);
-    const chip = document.createElement("span");
-    chip.className = "chip" + (activeRoom === r ? " active" : "");
-    chip.textContent = r === "all" ? ("Alle (" + cnt + ")") : (r + " (" + cnt + ")");
-    chip.addEventListener("click", function() { setRoom(chip, r); });
-    filter.appendChild(chip);
-  });
-  showFiltered();
+  return Object.keys(counts).sort(function(a, b) {
+    return a.localeCompare(b, "nl", { numeric: true, sensitivity: "base" });
+  }).map(function(name) { return { name: name, count: counts[name] }; });
 }
 
-function setRoom(el, r) {
+// Filtert de ruimtelijst op een zoekterm (naam of beschrijving), spatie-
+// en accent-ongevoelig. Ruimtes waarvan de naam overeenkomt komen eerst.
+function _filterRooms(rooms, term) {
+  const q = _normText(term);
+  if (!q) return rooms;
+  const opNaam = [], opDesc = [];
+  rooms.forEach(function(r) {
+    if (_normText(r.name).indexOf(q) !== -1) opNaam.push(r);
+    else if (_normText(ROOM_INFO[r.name] || "").indexOf(q) !== -1) opDesc.push(r);
+  });
+  return opNaam.concat(opDesc);
+}
+
+function _updateRoomPickButton() {
+  const val = document.getElementById("roomPickValue");
+  const clr = document.getElementById("roomPickClear");
+  if (!val) return;
+  if (activeRoom === "all") {
+    val.textContent = "Alle ruimtes (" + data.length + ")";
+  } else {
+    const n = data.filter(function(d) { return d.location === activeRoom; }).length;
+    val.textContent = activeRoom + " (" + n + ")";
+  }
+  if (clr) clr.hidden = (activeRoom === "all");
+}
+
+function openRoomPicker() {
+  const modal = document.getElementById("roomPickModal");
+  if (!modal) return;
+  const inp = document.getElementById("roomPickSearch");
+  inp.value = "";
+  renderRoomPickList();
+  modal.classList.add("open");
+  const list = document.getElementById("roomPickList");
+  if (list) list.scrollTop = 0;
+  // Geen autofocus: op de gsm zou het toetsenbord de halve lijst verbergen,
+  // terwijl men vaak gewoon wil scrollen en tikken.
+  const act = list && list.querySelector(".room-pick-item.active");
+  if (act && act.scrollIntoView) act.scrollIntoView({ block: "center" });
+}
+
+function closeRoomPicker() {
+  const modal = document.getElementById("roomPickModal");
+  if (modal) modal.classList.remove("open");
+}
+
+function renderRoomPickList() {
+  const list = document.getElementById("roomPickList");
+  if (!list) return;
+  const term = document.getElementById("roomPickSearch").value;
+  const rooms = _filterRooms(_roomCounts(), term);
+  list.textContent = "";
+  const items = (_normText(term) ? [] : [{ name: "all", count: data.length }]).concat(rooms);
+  if (items.length === 0) {
+    const e = document.createElement("div");
+    e.className = "room-pick-empty";
+    e.textContent = "Geen ruimte gevonden voor \u201c" + term.trim() + "\u201d.";
+    list.appendChild(e);
+    return;
+  }
+  items.forEach(function(r) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "room-pick-item" + (activeRoom === r.name ? " active" : "");
+    btn.setAttribute("role", "option");
+    btn.setAttribute("aria-selected", activeRoom === r.name ? "true" : "false");
+    const txt = document.createElement("span");
+    txt.className = "room-pick-text";
+    const nm = document.createElement("span");
+    nm.className = "room-pick-name";
+    nm.textContent = r.name === "all" ? "Alle ruimtes" : r.name;
+    txt.appendChild(nm);
+    const desc = r.name === "all" ? "" : (ROOM_INFO[r.name] || "").trim();
+    if (desc) {
+      const d = document.createElement("span");
+      d.className = "room-pick-desc";
+      d.textContent = desc;
+      txt.appendChild(d);
+    }
+    const cnt = document.createElement("span");
+    cnt.className = "room-pick-count";
+    cnt.textContent = r.count;
+    btn.appendChild(txt);
+    btn.appendChild(cnt);
+    btn.addEventListener("click", function() { setRoom(r.name); closeRoomPicker(); });
+    list.appendChild(btn);
+  });
+}
+
+function setRoom(r) {
   activeRoom = r;
-  document.querySelectorAll(".chip").forEach(function(c) { c.classList.remove("active"); });
-  el.classList.add("active");
+  _updateRoomPickButton();
   showFiltered();
+  window.scrollTo(0, 0);
 }
 
 function showFiltered() {
@@ -4480,6 +4565,19 @@ console.info("E-Kast Zoeker — versie " + APP_VERSION);
   on("btnRoomAdd", "click", openAddRoomModal);
   on("btnRoomDrop1", "click", function() { toggleRoomDropdown("newLocation", "roomDrop1"); });
   on("btnAdd", "click", addEntry);
+
+  on("roomPickBtn", "click", openRoomPicker);
+  on("roomPickClear", "click", function() { setRoom("all"); });
+  on("roomPickCloseBtn", "click", closeRoomPicker);
+  on("roomPickSearch", "input", renderRoomPickList);
+  on("roomPickSearch", "keydown", function(e) {
+    // Enter = eerste treffer kiezen.
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const first = document.querySelector("#roomPickList .room-pick-item");
+    if (first) first.click();
+  });
+  closeOnOutsideClick("roomPickModal", ".modal", closeRoomPicker);
 
   closeOnOutsideClick("werkbonModal", ".modal", closeAfwerkenModal);
   on("wbCancelBtn", "click", closeAfwerkenModal);

@@ -90,6 +90,25 @@ label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;co
 .filter{display:flex;gap:.5rem;overflow-x:auto;padding-bottom:.5rem;margin-bottom:1rem;}
 .chip{padding:.35rem .8rem;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:.75rem;white-space:nowrap;cursor:pointer;font-family:monospace;}
 .chip.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;}
+.room-pick-bar{display:flex;gap:.5rem;margin-bottom:1rem;}
+.room-pick-btn{flex:1;min-width:0;display:flex;align-items:center;gap:.6rem;min-height:48px;padding:.6rem 1rem;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:1rem;cursor:pointer;text-align:left;font-family:var(--font-sans);}
+.room-pick-btn:active,.room-pick-btn:focus-visible{border-color:var(--accent);}
+.room-pick-label{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);flex-shrink:0;}
+.room-pick-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-weight:700;color:var(--accent);}
+.room-pick-caret{color:var(--muted);flex-shrink:0;}
+.room-pick-clear{flex-shrink:0;width:48px;min-height:48px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:1.4rem;line-height:1;cursor:pointer;}
+.room-pick-clear[hidden]{display:none;}
+.room-pick-modal{display:flex;flex-direction:column;height:85vh;max-width:520px;margin:0 auto;}
+.room-pick-list{flex:1;overflow-y:auto;margin-top:.8rem;-webkit-overflow-scrolling:touch;}
+.room-pick-item{display:flex;align-items:center;gap:.6rem;width:100%;min-height:52px;padding:.55rem .8rem;border:none;border-bottom:1px solid var(--border);background:none;color:var(--text);text-align:left;cursor:pointer;font-family:var(--font-sans);}
+.room-pick-item:active{background:var(--surface-2);}
+.room-pick-item.active{background:var(--accent-bg);}
+.room-pick-item.active .room-pick-name{color:var(--accent);}
+.room-pick-text{flex:1;min-width:0;}
+.room-pick-name{display:block;font-family:monospace;font-weight:700;font-size:.95rem;overflow-wrap:anywhere;}
+.room-pick-desc{display:block;font-size:.78rem;color:var(--muted);margin-top:.15rem;overflow-wrap:anywhere;}
+.room-pick-count{flex-shrink:0;min-width:2.4rem;text-align:center;font-size:.8rem;font-weight:700;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:.2rem .5rem;}
+.room-pick-empty{padding:1.2rem .8rem;color:var(--muted);font-size:.9rem;}
 .section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.12em;margin-bottom:.8rem;}
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(100px);background:var(--success);color:#000;font-weight:700;font-size:.85rem;padding:.7rem 1.4rem;border-radius:30px;transition:transform .3s;z-index:999;white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
