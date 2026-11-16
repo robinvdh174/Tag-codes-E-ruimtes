@@ -43,15 +43,22 @@ async function sheetAction(p) { return sheetActionImpl(p); }
 var fetchImpl = null;
 async function fetchWithTimeout(url) { return fetchImpl(url); }
 
+var VERDELERS = [];
+var uiRefreshes = 0;
+function refreshUI() { uiRefreshes++; }
+var confirmCb = null;
+function showConfirm(msg, cb) { confirmCb = cb; }
+eval(sliceBlock("// Oude ruimtenaam -> huidige naam", "// ============================================================\n// DATA & STATE"));
 eval(sliceBlock("// Fout die de server zélf teruggaf", "// Handmatige sync"));
 eval(sliceBlock("// Teller die elke lokale ruimte-wijziging", "// ============================================================\n// INITIALISATIE"));
+eval(sliceBlock("// Aantal kasten en verdelers per ruimte", "function renderRoomsList"));
 eval(sliceBlock("let _editRoomOriginalName", "// ============================================================\n// AUDIT LOG"));
 
 function reset(rooms) {
   Object.keys(_ls).forEach(function(k) { delete _ls[k]; });
   Object.keys(ROOM_INFO).forEach(function(k) { delete ROOM_INFO[k]; });
   Object.assign(ROOM_INFO, rooms);
-  queue = []; toasts = []; activeRoom = "";
+  queue = []; toasts = []; activeRoom = ""; VERDELERS = [];
   data = [{ id: "1", location: "Oud" }];
 }
 function startEdit(oldName, newName, desc) {
@@ -100,6 +107,75 @@ function jsonResp(body) { return { ok: true, json: async function() { return bod
   fetchImpl = async function() { return jsonResp([{ name: "Oud", desc: "van ander toestel", renamedFrom: "" }]); };
   await syncRooms();
   eq(ROOM_INFO["Oud"], "van ander toestel", "4: wijziging van ander toestel komt binnen");
+
+  // ---- 6. Kasten met de oude naam uit de sheet krijgen de nieuwe naam ----
+  reset({ "Oud": "tekst" });
+  VERDELERS = [{ naam: "MCC X", ruimte: "Oud" }];
+  sheetActionImpl = async function() { return { ok: true }; };
+  await startEdit("Oud", "Nieuw", "tekst");
+  eq(VERDELERS[0].ruimte, "Nieuw", "6: verdeler verhuist mee naar de nieuwe naam");
+  const vanServer = [{ id: "1", location: "Oud" }, { id: "2", location: "Elders" }];
+  ok(_applyRoomRenamesTo(vanServer), "6: verouderde serverdata herkend");
+  eq(vanServer.map(function(d) { return d.location; }), ["Nieuw", "Elders"], "6: oude ruimtenaam uit de sheet -> nieuwe naam");
+  await startEdit("Nieuw", "Nieuwer", "tekst");
+  const keten = [{ id: "1", location: "Oud" }];
+  _applyRoomRenamesTo(keten);
+  eq(keten[0].location, "Nieuwer", "6: keten Oud -> Nieuw -> Nieuwer gevolgd");
+
+  // ---- 7. Meerdere oude namen in renamedFrom (ander toestel) ----
+  reset({ "Oud": "tekst", "Tussen": "" });
+  fetchImpl = async function() { return jsonResp([{ name: "Eind", desc: "d", renamedFrom: "Oud | Tussen" }]); };
+  await syncRooms();
+  eq(Object.keys(ROOM_INFO), ["Eind"], "7: alle oude namen opgeruimd");
+  eq(data[0].location, "Eind", "7: kast mee hernoemd");
+
+  // ---- 8. Ruimte verwijderen ----
+  reset({ "Leeg": "weg ermee", "Oud": "tekst" });
+  let sent = null;
+  sheetActionImpl = async function(p) { sent = p; return { ok: true }; };
+  _editRoomOriginalName = "Oud"; confirmCb = null;
+  askDeleteRoom();
+  ok(confirmCb === null && /1 kast/.test(_el("editRoomErr").textContent), "8: ruimte met kasten kan niet weg");
+  _editRoomOriginalName = "Leeg"; _el("editRoomErr").textContent = "";
+  askDeleteRoom();
+  ok(typeof confirmCb === "function", "8: lege ruimte vraagt bevestiging");
+  await deleteRoom("Leeg");
+  eq(sent, { action: "deleteRoom", name: "Leeg" }, "8: deleteRoom naar de server");
+  ok(!("Leeg" in ROOM_INFO), "8: ruimte lokaal weg");
+  eq(JSON.parse(localStorage.getItem("ekast-room-deleted")), ["Leeg"], "8: verwijdering onthouden");
+  // server weigert -> terugzetten
+  reset({ "Leeg": "weg ermee" }); data = [];
+  sheetActionImpl = async function() { throw serverError("Onbekende actie: deleteRoom"); };
+  await deleteRoom("Leeg");
+  eq(ROOM_INFO["Leeg"], "weg ermee", "8: geweigerde verwijdering teruggezet");
+  eq(JSON.parse(localStorage.getItem("ekast-room-deleted")), [], "8: niet meer als verwijderd onthouden");
+  ok(toasts.some(function(t) { return t.err && /Code\.gs/.test(t.msg); }), "8: deploy-hint bij oude backend");
+  // netwerkfout -> queue, sync zet de ruimte niet terug
+  reset({ "Leeg": "weg ermee" }); data = [];
+  sheetActionImpl = async function() { throw new Error("Failed to fetch"); };
+  await deleteRoom("Leeg");
+  eq(queue.map(function(q) { return q.action; }), ["deleteRoom"], "8: offline verwijderen in de queue");
+  fetchImpl = async function() { return jsonResp([{ name: "Leeg", desc: "weg ermee", renamedFrom: "" }]); };
+  await syncRooms();
+  ok(!("Leeg" in ROOM_INFO), "8: wachtende verwijdering niet teruggezet door sync");
+
+  // ---- 9. Verwijderd op een ander toestel ----
+  reset({ "Leeg": "x", "Blijft": "y" }); activeRoom = "Leeg";
+  fetchImpl = async function() { return jsonResp([{ name: "Leeg", desc: "", renamedFrom: "", deleted: true }]); };
+  await syncRooms();
+  eq(Object.keys(ROOM_INFO), ["Blijft"], "9: verwijderde ruimte verdwijnt");
+  eq(activeRoom, "all", "9: filter terug naar alle ruimtes");
+  fetchImpl = async function() { return jsonResp([{ name: "Leeg", desc: "terug", renamedFrom: "" }]); };
+  await syncRooms();
+  eq(ROOM_INFO["Leeg"], "terug", "9: opnieuw toegevoegde ruimte komt terug");
+  eq(JSON.parse(localStorage.getItem("ekast-room-deleted")), [], "9: niet meer als verwijderd onthouden");
+
+  // ---- 10. Tellers in het beheer ----
+  reset({ "Oud": "" });
+  data = [{ id: "1", location: "Oud" }, { id: "2", location: "Oud" }, { id: "3", location: "B" }];
+  VERDELERS = [{ naam: "MCC X", ruimte: "Oud" }];
+  eq(_roomUsage(), { kasten: { "Oud": 2, "B": 1 }, verdelers: { "Oud": 1 } }, "10: kasten en verdelers per ruimte");
+  eq([_aantal(1, "kast", "kasten"), _aantal(0, "kast", "kasten")], ["1 kast", "0 kasten"], "10: enkelvoud/meervoud");
 
   ok(isPermanentServerError(serverError("Onbekende actie: x")), "5: serverfout is permanent");
   ok(!isPermanentServerError(serverError("Server bezet, probeer opnieuw")), "5: 'bezet' is niet permanent");
