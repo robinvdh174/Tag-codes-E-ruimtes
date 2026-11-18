@@ -152,4 +152,19 @@ function score(d, query) {
 }
 
 console.log("Search-tests voltooid.");
+// ---------- Meerdere woorden over verschillende velden ----------
+{
+  const d = { code: "TST01.P1", location: "3KV", note: "pomp links", position: "7/5" };
+  function multi(q) {
+    const s = score(d, q);
+    return s >= 0 ? s : _scoreAlleWoorden(d, _splitZoekWoorden(q));
+  }
+  ok(multi("3KV pomp") >= 0, "ruimte + notitie-woord vindt de kast");
+  ok(multi("pomp 3kv") >= 0, "volgorde van de woorden maakt niet uit");
+  ok(multi("tst01 pomp") >= 0, "code + notitie-woord vindt de kast");
+  eq(multi("3KV motor"), -1, "een woord dat nergens voorkomt → geen treffer");
+  eq(_scoreAlleWoorden(d, _splitZoekWoorden("pomp")), -1, "één woord valt niet onder het vangnet");
+  ok(score(d, "pomp links") > 100, "gewone treffer blijft hoger scoren dan het vangnet");
+}
+
 summary();

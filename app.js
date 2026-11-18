@@ -1222,6 +1222,27 @@ function _scoreItem(d, qNormCode, qNormText) {
   if (qNormText && pos && pos.indexOf(qNormText) !== -1) return 200;
   return -1;
 }
+// Zoeken met meerdere woorden over verschillende velden ("3KV pomp",
+// "DH motor"): enkel als vangnet wanneer de volledige zoekterm nergens
+// matcht. Elk woord moet dan ergens voorkomen (code, ruimte, notitie of
+// positie). Scoort onder alle gewone treffers.
+function _splitZoekWoorden(raw) {
+  const woorden = String(raw == null ? "" : raw).trim().split(/\s+/).filter(function(w) { return w; });
+  if (woorden.length < 2) return [];
+  return woorden.map(function(w) { return { code: _normCode(w), text: _normText(w) }; });
+}
+function _scoreAlleWoorden(d, woorden) {
+  if (!woorden || woorden.length < 2) return -1;
+  const code = _normCode(d.code);
+  const velden = [_normText(d.location), _normText(d.note), _normText(d.position)];
+  for (let i = 0; i < woorden.length; i++) {
+    const w = woorden[i];
+    const inCode = w.code && code.indexOf(w.code) !== -1;
+    const inTekst = w.text && velden.some(function(v) { return v && v.indexOf(w.text) !== -1; });
+    if (!inCode && !inTekst) return -1;
+  }
+  return 100;
+}
 
 // ============================================================
 // VERDELERS — indelingstekeningen: welke uitgang (tag) in welk veld
@@ -1439,9 +1460,11 @@ function _doSearchNow(value) {
   _currentSearchTerm = raw;
   const qNormCode = _normCode(raw);
   const qNormText = _normText(raw);
+  const woorden = _splitZoekWoorden(raw);
   const scored = [];
   for (let i = 0; i < data.length; i++) {
-    const s = _scoreItem(data[i], qNormCode, qNormText);
+    let s = _scoreItem(data[i], qNormCode, qNormText);
+    if (s < 0 && woorden.length) s = _scoreAlleWoorden(data[i], woorden);
     if (s >= 0) scored.push({ item: data[i], score: s });
   }
   // Uitgangen uit de verdeler-overzichten. Een uitgang waarvan de kast al
